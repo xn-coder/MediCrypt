@@ -1,9 +1,11 @@
 
+
 "use client";
 
 import * as React from "react";
 import Image from "next/image";
-import { Upload, Download, Lock, Unlock, Loader2, RotateCcw, FileKey, LogOut, ShieldCheck, Copy, Check, Mail } from "lucide-react"; // Added Mail
+import { Upload, Download, Lock, Unlock, Loader2, RotateCcw, FileKey, LogOut, ShieldCheck, Copy, Check, Mail, AlertCircle, Send } from "lucide-react"; // Added Mail, AlertCircle, Send
+import emailjs from 'emailjs-com'; // Import emailjs
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +16,17 @@ import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+
+
+// --- EmailJS Configuration Check ---
+const EMAILJS_SERVICE_ID = process.env.NEXT_PUBLIC_EMAILJS_SERVICE_ID;
+const EMAILJS_TEMPLATE_ID = process.env.NEXT_PUBLIC_EMAILJS_TEMPLATE_ID;
+const EMAILJS_PUBLIC_KEY = process.env.NEXT_PUBLIC_EMAILJS_PUBLIC_KEY;
+
+const isEmailJsConfigured = EMAILJS_SERVICE_ID && EMAILJS_TEMPLATE_ID && EMAILJS_PUBLIC_KEY &&
+                            EMAILJS_SERVICE_ID !== 'YOUR_EMAILJS_SERVICE_ID' && // Check against placeholder
+                            EMAILJS_TEMPLATE_ID !== 'YOUR_EMAILJS_TEMPLATE_ID' && // Check against placeholder
+                            EMAILJS_PUBLIC_KEY !== 'YOUR_EMAILJS_PUBLIC_KEY';   // Check against placeholder
 
 
 // --- Mock/Placeholder Functions ---
@@ -174,7 +187,7 @@ const analyzeSecurity = async (): Promise<{ robustness: number, resistance: stri
 
 // --- Component ---
 
-type ProcessStatus = "idle" | "preprocessing" | "generating_key" | "encrypting" | "decrypting" | "analyzing" | "complete" | "error";
+type ProcessStatus = "idle" | "preprocessing" | "generating_key" | "encrypting" | "decrypting" | "analyzing" | "sending_email" | "complete" | "error"; // Added "sending_email"
 type Mode = "encrypt" | "decrypt";
 
 interface MediCryptAppProps {
@@ -202,6 +215,7 @@ export function MediCryptApp({ onLogout, email, encryptedFiles, onUpdateEncrypte
   const [processTime, setProcessTime] = React.useState<number | null>(null);
   const [decryptedFileInfo, setDecryptedFileInfo] = React.useState<{ name: string; type: string } | null>(null);
   const [isKeyCopied, setIsKeyCopied] = React.useState(false); // State for copy button
+  const [emailSent, setEmailSent] = React.useState(false); // Track if email was sent
 
 
   const { toast } = useToast();
@@ -252,6 +266,7 @@ export function MediCryptApp({ onLogout, email, encryptedFiles, onUpdateEncrypte
       setProcessTime(null);
       setDecryptedFileInfo(null);
       setIsKeyCopied(false); // Reset copy status
+      setEmailSent(false); // Reset email sent status
 
     } else if (currentDecryptedData && mode === 'decrypt') {
         // Check if decryptedData is an image type before creating URL
@@ -331,6 +346,7 @@ export function MediCryptApp({ onLogout, email, encryptedFiles, onUpdateEncrypte
     setProcessTime(null);
     setDecryptedFileInfo(null);
     setIsKeyCopied(false); // Reset copy status
+    setEmailSent(false); // Reset email sent status
 
      // Reset the file input visually
      const fileInput = document.getElementById('medical-image-upload') as HTMLInputElement;
@@ -347,6 +363,73 @@ export function MediCryptApp({ onLogout, email, encryptedFiles, onUpdateEncrypte
     // Preview URL creation is handled by the useEffect hook
     // Toast notification for decrypt mode is handled by the other useEffect
   };
+
+    // Function to send email using EmailJS
+    const sendEncryptionKeyEmail = async (toEmail: string, fileName: string, key: string): Promise<boolean> => {
+         if (!isEmailJsConfigured) {
+             console.error("EmailJS is not configured. Cannot send email. Please set environment variables.");
+             toast({
+                 title: "Email Sending Disabled",
+                 description: "EmailJS credentials not found. Key could not be sent.",
+                 variant: "destructive",
+             });
+             return false;
+         }
+
+        // Ensure template ID is defined before proceeding
+        if (!EMAILJS_TEMPLATE_ID) {
+            console.error("EmailJS Template ID is missing.");
+            toast({ title: "Email Error", description: "Email template configuration is missing.", variant: "destructive" });
+            return false;
+        }
+
+        // Ensure service ID is defined before proceeding
+        if (!EMAILJS_SERVICE_ID) {
+            console.error("EmailJS Service ID is missing.");
+            toast({ title: "Email Error", description: "Email service configuration is missing.", variant: "destructive" });
+            return false;
+        }
+
+        // Ensure public key is defined before proceeding
+        if (!EMAILJS_PUBLIC_KEY) {
+            console.error("EmailJS Public Key is missing.");
+            toast({ title: "Email Error", description: "Email public key configuration is missing.", variant: "destructive" });
+            return false;
+        }
+
+        const templateParams = {
+            to_email: toEmail,
+            file_name: fileName,
+            decryption_key: key,
+            // Add any other parameters your EmailJS template expects
+            // from_name: "MediCrypt System", // Optional: If your template needs it
+        };
+
+        console.log("Attempting to send email with params:", templateParams);
+        setStatus("sending_email");
+        setProgress(95); // Update progress for sending email
+
+        try {
+            const response = await emailjs.send(
+                EMAILJS_SERVICE_ID,
+                EMAILJS_TEMPLATE_ID,
+                templateParams,
+                EMAILJS_PUBLIC_KEY
+            );
+            console.log('EmailJS SUCCESS!', response.status, response.text);
+            toast({ title: "Email Sent", description: `Decryption key for '${fileName}' sent to ${toEmail}.` });
+            return true; // Indicate success
+        } catch (err) {
+            console.error('EmailJS FAILED...', err);
+            const errorMessage = err instanceof Error ? err.message : "Unknown email sending error";
+            toast({ title: "Email Sending Failed", description: `Could not send key: ${errorMessage}`, variant: "destructive" });
+            setError(`Failed to send email: ${errorMessage}`); // Update error state
+            return false; // Indicate failure
+        } finally {
+            // Status will be updated to 'complete' or 'error' after this block
+        }
+    };
+
 
   const handleEncrypt = async () => {
     if (!selectedFile) {
@@ -372,6 +455,7 @@ export function MediCryptApp({ onLogout, email, encryptedFiles, onUpdateEncrypte
     setStatus("idle");
     setProgress(0);
     setIsKeyCopied(false); // Reset copy status
+    setEmailSent(false); // Reset email sent status
 
     try {
       // 1. Preprocessing
@@ -383,13 +467,13 @@ export function MediCryptApp({ onLogout, email, encryptedFiles, onUpdateEncrypte
 
       // 2. Key Generation
       setStatus("generating_key");
-      const key = await generateKeySM4();
-      setEncryptionKey(key); // Store the generated key locally in state
+      const generatedKey = await generateKeySM4(); // Renamed to avoid conflict
+      setEncryptionKey(generatedKey); // Store the generated key locally in state
       setProgress(40);
 
       // 3. Encryption
       setStatus("encrypting");
-      const { encryptedFile, encryptionTime } = await encryptImageRubik(preprocessed, key);
+      const { encryptedFile, encryptionTime } = await encryptImageRubik(preprocessed, generatedKey);
       setEncryptedData(encryptedFile);
       setProcessTime(encryptionTime);
       setProgress(75);
@@ -401,26 +485,47 @@ export function MediCryptApp({ onLogout, email, encryptedFiles, onUpdateEncrypte
        setProgress(90);
 
         // 5. Update user profile with the key
-       if (originalFilename && key) {
-            onUpdateEncryptedFiles(originalFilename, key); // Call parent function to save key
+       if (originalFilename && generatedKey) {
+            onUpdateEncryptedFiles(originalFilename, generatedKey); // Call parent function to save key
        } else {
             console.warn("Could not save encryption key: Original filename or key is missing.");
        }
 
+        // 6. Send Email with Key
+        let emailSuccess = false;
+        if (isEmailJsConfigured && originalFilename && generatedKey && email) {
+            emailSuccess = await sendEncryptionKeyEmail(email, originalFilename, generatedKey);
+            setEmailSent(emailSuccess); // Update state based on email success
+        } else if (!isEmailJsConfigured) {
+             // Handle case where EmailJS is not set up (but don't treat as an error for the overall process)
+             console.warn("EmailJS not configured. Skipping email notification.");
+             // Optionally inform user via toast or UI element
+        }
 
-      setStatus("complete");
-      setProgress(100);
-      toast({
-        title: "Encryption Successful",
-        description: (
-          <div>
-            <span>Image encrypted in {encryptionTime.toFixed(2)} ms.</span>
-             <span className="block text-xs mt-1">Key saved to profile for original file '{originalFilename}'.</span>
-             {/* Key display moved to Analysis Results card */}
-          </div>
-        ),
-        duration: 7000, // Shorter duration now
-      });
+        // Update status based on email sending result
+        if (status === "sending_email" && !emailSuccess && isEmailJsConfigured) {
+            // If email sending failed but encryption was ok, set status to error but progress remains high
+             setStatus("error"); // Error state due to email failure
+             // Keep progress high to indicate encryption part succeeded
+        } else {
+             // If email sent successfully OR EmailJS wasn't configured, proceed to complete
+            setStatus("complete");
+            setProgress(100);
+             toast({
+                title: "Encryption Successful",
+                description: (
+                <div>
+                    <span>Image encrypted in {encryptionTime.toFixed(2)} ms.</span>
+                    <span className="block text-xs mt-1">Key saved to profile for original file '{originalFilename}'.</span>
+                    {isEmailJsConfigured && emailSuccess && <span className="block text-xs mt-1 text-green-600">Decryption key sent to your email.</span>}
+                    {isEmailJsConfigured && !emailSuccess && <span className="block text-xs mt-1 text-destructive">Failed to send decryption key via email.</span>}
+                    {!isEmailJsConfigured && <span className="block text-xs mt-1 text-yellow-600">Email notifications are disabled.</span>}
+                </div>
+                ),
+                duration: 10000, // Longer duration to read email status
+             });
+        }
+
 
     } catch (err) {
       console.error("Encryption error:", err);
@@ -457,6 +562,7 @@ export function MediCryptApp({ onLogout, email, encryptedFiles, onUpdateEncrypte
       setStatus("idle"); // Reset status before starting
       setProgress(0); // Reset progress
       setIsKeyCopied(false); // Reset copy status
+      setEmailSent(false); // Reset email status
 
       // The data to decrypt is always the currently selected file in decrypt mode
       const dataToDecrypt = selectedFile;
@@ -610,7 +716,8 @@ export function MediCryptApp({ onLogout, email, encryptedFiles, onUpdateEncrypte
         }
     };
 
-    // Create mailto link
+    // Create mailto link - This is now less crucial as email is sent automatically
+    // but can be kept as a manual backup or removed.
     const createMailtoLink = (): string => {
         if (!encryptedData || !encryptionKey || !selectedFile) return "#"; // Return '#' if data is missing
 
@@ -624,7 +731,7 @@ export function MediCryptApp({ onLogout, email, encryptedFiles, onUpdateEncrypte
         return `mailto:${email}?subject=${encodedSubject}&body=${encodedBody}`;
     };
 
-  const isLoading = ["preprocessing", "generating_key", "encrypting", "decrypting", "analyzing"].includes(status);
+  const isLoading = ["preprocessing", "generating_key", "encrypting", "decrypting", "analyzing", "sending_email"].includes(status); // Added sending_email
 
   return (
       <Card className="w-full max-w-2xl shadow-lg relative">
@@ -680,6 +787,17 @@ export function MediCryptApp({ onLogout, email, encryptedFiles, onUpdateEncrypte
             </div>
         </CardHeader>
         <CardContent className="space-y-6">
+          {/* EmailJS Configuration Warning */}
+           {!isEmailJsConfigured && mode === 'encrypt' && (
+                <Alert variant="default" className="border-yellow-500 bg-yellow-50 text-yellow-800">
+                    <AlertCircle className="h-4 w-4 text-yellow-600" />
+                    <AlertTitle>Email Notification Disabled</AlertTitle>
+                    <AlertDescription>
+                        EmailJS is not configured. Encryption keys will not be sent automatically via email. Please configure EmailJS environment variables (SERVICE_ID, TEMPLATE_ID, PUBLIC_KEY) to enable this feature. See `.env.local.example`.
+                    </AlertDescription>
+                </Alert>
+            )}
+
           <ImageUpload
             onFileChange={handleFileChange}
             // Show original preview ONLY in encrypt mode
@@ -695,7 +813,7 @@ export function MediCryptApp({ onLogout, email, encryptedFiles, onUpdateEncrypte
             <div className="space-y-2">
               <Progress value={progress} className="w-full" />
               <p className="text-sm text-center text-muted-foreground capitalize">
-                {status.replace("_", " ")}...
+                 {status.replace(/_/g, " ")}... {/* Replace underscores with spaces */}
                  {status === 'complete' && processTime != null && ` (${processTime.toFixed(2)} ms)`}
               </p>
             </div>
@@ -703,7 +821,7 @@ export function MediCryptApp({ onLogout, email, encryptedFiles, onUpdateEncrypte
 
           {error && (
             <Alert variant="destructive">
-              {/* <AlertCircle className="h-4 w-4" /> */}
+               <AlertCircle className="h-4 w-4" /> {/* Use AlertCircle for consistency */}
               <AlertTitle>Error</AlertTitle>
               <AlertDescription>{error}</AlertDescription>
             </Alert>
@@ -727,7 +845,7 @@ export function MediCryptApp({ onLogout, email, encryptedFiles, onUpdateEncrypte
             )}
 
           {/* Analysis Results Display */}
-           {mode === 'encrypt' && analysisResults && status === 'complete' && (
+           {mode === 'encrypt' && analysisResults && (status === 'complete' || (status === 'error' && !errorMessageIncludesEmail(error))) && ( // Show results even if email failed, but not on initial encryption error
                 <Card className="bg-secondary/50 border-border">
                     <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
                         <CardTitle className="text-lg flex items-center gap-2">
@@ -739,7 +857,7 @@ export function MediCryptApp({ onLogout, email, encryptedFiles, onUpdateEncrypte
                     <CardContent className="text-sm space-y-1 pt-2">
                         <div className="flex items-center gap-1">
                             <span>Robustness Score:</span>
-                             <Badge variant="outline" className="ml-1">{analysisResults.robustness.toFixed(1)} / 100</Badge> {/* Changed div to Badge */}
+                             <Badge variant="outline" className="ml-1">{analysisResults.robustness.toFixed(1)} / 100</Badge>
                         </div>
                         <div className="flex items-center gap-1">
                              <span>Resistance Level:</span>
@@ -774,6 +892,29 @@ export function MediCryptApp({ onLogout, email, encryptedFiles, onUpdateEncrypte
                                      </Tooltip>
                                 </TooltipProvider>
                             </div>
+                         )}
+                         {/* Email Status Indicator */}
+                         {isEmailJsConfigured && encryptionKey && (
+                             <div className="flex items-center gap-2 mt-1 pt-1 text-xs border-t border-border/50">
+                                 <Mail className={`h-4 w-4 ${emailSent ? 'text-green-600' : 'text-muted-foreground'}`}/>
+                                 <span>Email Status:</span>
+                                 {emailSent ? (
+                                     <span className="text-green-600">Key sent successfully</span>
+                                 ) : (status === 'error' && errorMessageIncludesEmail(error)) ? ( // Check if error is specifically email-related
+                                     <span className="text-destructive">Failed to send key</span>
+                                 ) : (status === 'sending_email') ? (
+                                    <span className="text-muted-foreground">Sending...</span>
+                                 ) : (
+                                    <span className="text-muted-foreground">Not sent yet</span>
+                                 )
+                                }
+                             </div>
+                         )}
+                         {!isEmailJsConfigured && encryptionKey && (
+                             <div className="flex items-center gap-2 mt-1 pt-1 text-xs border-t border-border/50">
+                                <Mail className="h-4 w-4 text-yellow-600"/>
+                                <span className="text-yellow-600">Email notifications disabled.</span>
+                             </div>
                          )}
                     </CardContent>
                 </Card>
@@ -813,8 +954,14 @@ export function MediCryptApp({ onLogout, email, encryptedFiles, onUpdateEncrypte
           <div className="flex gap-2 w-full sm:w-auto flex-wrap justify-center sm:justify-start">
             {mode === 'encrypt' && (
                  <Button onClick={handleEncrypt} disabled={isLoading || !selectedFile || (status === 'complete' && mode === 'encrypt')} className="w-full sm:w-auto flex-1 sm:flex-none min-w-[120px] bg-accent hover:bg-accent/90">
-                    {isLoading && ['preprocessing', 'generating_key', 'encrypting', 'analyzing'].includes(status) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Lock className="mr-2 h-4 w-4" />}
-                    {status === 'preprocessing' ? 'Preprocessing...' : status === 'generating_key' ? 'Generating Key...' : status === 'encrypting' ? 'Encrypting...' : status === 'analyzing' ? 'Analyzing...' : 'Encrypt'}
+                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Lock className="mr-2 h-4 w-4" />}
+                    {/* Update button text based on detailed status */}
+                     {status === 'preprocessing' ? 'Preprocessing...' :
+                      status === 'generating_key' ? 'Generating Key...' :
+                      status === 'encrypting' ? 'Encrypting...' :
+                      status === 'analyzing' ? 'Analyzing...' :
+                      status === 'sending_email' ? 'Sending Email...' :
+                      'Encrypt'}
                  </Button>
             )}
              {mode === 'decrypt' && (
@@ -830,39 +977,46 @@ export function MediCryptApp({ onLogout, email, encryptedFiles, onUpdateEncrypte
           </div>
 
           <div className="flex gap-2 w-full sm:w-auto flex-wrap justify-center sm:justify-start">
-            {mode === 'encrypt' && encryptedData && status === 'complete' && (
+            {mode === 'encrypt' && encryptedData && (status === 'complete' || (status === 'error' && !errorMessageIncludesEmail(error))) && ( // Show download even if email failed
                 <>
                  <Button variant="outline" onClick={() => handleDownload(encryptedData, constructEncryptedFilename(selectedFile!.name))} className="w-full sm:w-auto flex-1 sm:flex-none min-w-[150px]">
                     <Download className="mr-2 h-4 w-4" />
                     Download Encrypted
                  </Button>
-                  <TooltipProvider>
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                             {/* Use an anchor tag for the mailto link */}
-                            <a
-                                href={createMailtoLink()}
-                                target="_blank" // Open in new tab/client
-                                rel="noopener noreferrer" // Security best practice
-                                // Apply button styles to the anchor tag
-                                className={`inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2 w-full sm:w-auto flex-1 sm:flex-none min-w-[150px]`}
-                                // Prevent navigation if link construction fails
-                                onClick={(e) => {
-                                    if (createMailtoLink() === "#") {
-                                        e.preventDefault();
-                                        toast({ title: "Cannot Email", description: "Missing encrypted file or key.", variant: "destructive" });
-                                    }
-                                }}
-                            >
-                                <Mail className="mr-2 h-4 w-4" />
-                                Email File & Key
-                            </a>
-                        </TooltipTrigger>
-                         <TooltipContent>
-                            <p>Opens your default email client with the encrypted file and key (requires manual attachment).</p>
-                        </TooltipContent>
-                     </Tooltip>
-                   </TooltipProvider>
+                 {/* Conditionally render manual email button if EmailJS isn't configured or sending failed */}
+                 {(!isEmailJsConfigured || (status === 'error' && errorMessageIncludesEmail(error))) && encryptionKey && selectedFile && (
+                    <TooltipProvider>
+                         <Tooltip>
+                            <TooltipTrigger asChild>
+                                {/* Use an anchor tag for the mailto link */}
+                                <a
+                                    href={createMailtoLink()}
+                                    target="_blank" // Open in new tab/client
+                                    rel="noopener noreferrer" // Security best practice
+                                    // Apply button styles to the anchor tag
+                                    className={`inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2 w-full sm:w-auto flex-1 sm:flex-none min-w-[150px]`}
+                                    // Prevent navigation if link construction fails
+                                    onClick={(e) => {
+                                        if (createMailtoLink() === "#") {
+                                            e.preventDefault();
+                                            toast({ title: "Cannot Email", description: "Missing encrypted file or key.", variant: "destructive" });
+                                        }
+                                    }}
+                                >
+                                    <Send className="mr-2 h-4 w-4" /> {/* Changed icon to Send */}
+                                    Email Key Manually
+                                </a>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                {!isEmailJsConfigured ? (
+                                    <p>Auto-email disabled. Click to open your email client with the key.</p>
+                                ) : (
+                                    <p>Auto-email failed. Click to open your email client with the key.</p>
+                                )}
+                            </TooltipContent>
+                         </Tooltip>
+                    </TooltipProvider>
+                  )}
                 </>
              )}
               {mode === 'decrypt' && decryptedData && status === 'complete' && (
@@ -875,4 +1029,9 @@ export function MediCryptApp({ onLogout, email, encryptedFiles, onUpdateEncrypte
         </CardFooter>
       </Card>
   );
+}
+
+// Helper function to check if error message indicates an email failure
+function errorMessageIncludesEmail(error: string | null): boolean {
+    return !!error && (error.toLowerCase().includes('email') || error.toLowerCase().includes('emailjs'));
 }
