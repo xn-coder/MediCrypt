@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import { Lock, User, KeyRound, FileText, Loader2 } from "lucide-react";
+import { Lock, UserPlus, KeyRound, FileText, Loader2 } from "lucide-react"; // Changed User to UserPlus for Register
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -46,7 +46,7 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
     setIsLoading(false);
     setError(null);
     // Reset file input visually if possible (difficult to do reliably cross-browser)
-    const fileInput = document.getElementById('key-file-input') as HTMLInputElement;
+    const fileInput = document.getElementById('key-file-input-login') as HTMLInputElement; // Use specific ID
     if (fileInput) fileInput.value = "";
   }
 
@@ -86,6 +86,8 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
             throw new Error("Invalid username.");
         }
         // Simulate password check (replace with actual hash comparison)
+        // In a real app, the password would be sent to the server for verification.
+        // Here, we just simulate checking against a locally derived "hash".
         const simulatedCorrectPasswordHash = `hashed_${storedUser.username}_password`;
         if (`hashed_${username}_password` !== simulatedCorrectPasswordHash) { // Check against entered username for simulation consistency
              throw new Error("Invalid password.");
@@ -98,7 +100,8 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
                  // Trim both strings to handle potential whitespace differences from file saving/reading
                 if (uploadedKeyData.trim() === storedUser.keyFileData.trim()) {
                     onLoginSuccess(username);
-                    resetForm();
+                    resetForm(); // Reset after successful login confirmation
+                    // No need to setIsLoading(false) here as the parent component will re-render
                 } else {
                     setError("Invalid key file content.");
                     setIsLoading(false);
@@ -122,16 +125,18 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
          }
 
         // Generate mock key file content
-        const keyFileContent = `USER_KEY_FOR_${username.toUpperCase()}_${Date.now()}`;
+        const keyFileContent = `USER_KEY_FOR_${username.toUpperCase()}_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
         const keyBlob = new Blob([keyFileContent], { type: "text/plain" });
 
+        // Parent component handles saving user and triggering download
         onRegisterSuccess(username, keyBlob);
-        // Reset form after successful registration is processed (including download)
-        // The parent component (page.tsx) handles the toast and state change.
-        // We might want to switch the tab to login automatically.
-        setMode("login");
+
+        // Reset form and potentially switch to login view after parent confirms success
+        // For now, just reset and stay on register tab, parent shows toast
         resetForm();
-        setIsLoading(false); // Reset loading here as parent handles async part
+        setIsLoading(false); // Reset loading after mock "work" is done
+        // Optional: Switch to login tab after registration
+        // setMode("login");
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "An unknown error occurred.");
@@ -163,7 +168,8 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
              {/* Shared Fields */}
             <div className="space-y-3 mt-4">
                <div className="relative">
-                 <User className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                 {/* Use User icon from lucide-react */}
+                 <UserPlus className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                  <Input
                     id="username"
                     type="text"
@@ -173,6 +179,7 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
                     required
                     className="pl-10"
                     disabled={isLoading}
+                    aria-label="Username"
                   />
                </div>
                 <div className="relative">
@@ -186,21 +193,24 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
                     required
                     className="pl-10"
                      disabled={isLoading}
+                     aria-label="Password"
                   />
                 </div>
             </div>
 
             <TabsContent value="login" className="mt-4 space-y-3">
                <div className="relative">
+                 <Label htmlFor="key-file-input-login" className="sr-only">Select Key File</Label>
                  <FileText className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                 <Input
-                    id="key-file-input"
+                    id="key-file-input-login" // Specific ID for login file input
                     type="file"
                     onChange={handleFileChange}
-                    required
+                    required={mode === 'login'} // Required only for login
                     className="pl-10 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-accent file:text-accent-foreground hover:file:bg-accent/90"
                     accept=".txt" // Restrict to text files or specific extension
                     disabled={isLoading}
+                    aria-label="Key File"
                  />
                  </div>
                  {keyFile && <p className="text-xs text-muted-foreground text-center">Selected key: {keyFile.name}</p>}
@@ -214,13 +224,13 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
 
              {error && (
                 <Alert variant="destructive" className="mt-4">
-                  <AlertTitle>Error</AlertTitle>
-                  <AlertDescription>{error}</AlertDescription>
+                    <AlertTitle>Error</AlertTitle>
+                    <AlertDescription>{error}</AlertDescription>
                 </Alert>
              )}
 
              <Button type="submit" className="w-full mt-6 bg-accent hover:bg-accent/90" disabled={isLoading}>
-                {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (mode === 'login' ? <Lock className="mr-2 h-4 w-4" /> : <User className="mr-2 h-4 w-4" />)}
+                {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (mode === 'login' ? <Lock className="mr-2 h-4 w-4" /> : <UserPlus className="mr-2 h-4 w-4" />)}
                 {isLoading ? "Processing..." : (mode === "login" ? "Login" : "Register")}
              </Button>
            </form>

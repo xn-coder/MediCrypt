@@ -5,7 +5,8 @@ import * as React from "react";
 import { LoginRegisterForm } from "@/components/auth/login-register-form";
 import { MediCryptApp } from "@/components/medi-crypt-app";
 import { useToast } from "@/hooks/use-toast";
-import { Toaster } from "@/components/ui/toaster"; // Ensure Toaster is included
+// Toaster is typically in layout.tsx, but kept here for standalone demo potential
+// import { Toaster } from "@/components/ui/toaster";
 
 // --- Mock User Data Store ---
 // In a real application, this would be replaced by a secure backend and database.
@@ -17,93 +18,133 @@ interface MockUser {
 
 const MOCK_USER_STORAGE_KEY = "mockUserData";
 
-const getMockUser = (): MockUser | null => {
-  if (typeof window === 'undefined') return null; // Avoid server-side execution
-  const storedData = localStorage.getItem(MOCK_USER_STORAGE_KEY);
-  return storedData ? JSON.parse(storedData) : null;
-};
-
-const saveMockUser = (user: MockUser) => {
-   if (typeof window === 'undefined') return; // Avoid server-side execution
-  localStorage.setItem(MOCK_USER_STORAGE_KEY, JSON.stringify(user));
-};
-
-const clearMockUser = () => {
-   if (typeof window === 'undefined') return; // Avoid server-side execution
-  localStorage.removeItem(MOCK_USER_STORAGE_KEY);
-}
-
+// --- Component ---
 
 export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = React.useState(false);
   const [currentUser, setCurrentUser] = React.useState<MockUser | null>(null);
+  // Use state to manage mock user data to avoid direct localStorage access during SSR/initial render
+  const [mockUser, setMockUser] = React.useState<MockUser | null>(null);
+  const [isLoading, setIsLoading] = React.useState(true); // Track initial loading state
   const { toast } = useToast();
 
-   // Check authentication status on initial load (client-side only)
+   // Load user data from localStorage only on the client-side after hydration
    React.useEffect(() => {
-     const user = getMockUser();
-     if (user) {
-        // In a real app, you'd likely verify the session/token here
-        // For this mock, we just assume if user data exists, they were logged in.
-        // A more robust mock might store a session token.
-        // setIsAuthenticated(true); // Let's require login every time for this demo
-        // setCurrentUser(user);
+     if (typeof window !== 'undefined') {
+        const storedData = localStorage.getItem(MOCK_USER_STORAGE_KEY);
+        if (storedData) {
+            try {
+                const parsedUser = JSON.parse(storedData);
+                setMockUser(parsedUser);
+                // Optionally, you could auto-login here if a session token was stored
+                // For this demo, we require login each time.
+            } catch (e) {
+                console.error("Failed to parse user data from localStorage", e);
+                localStorage.removeItem(MOCK_USER_STORAGE_KEY); // Clear invalid data
+            }
+        }
      }
+     setIsLoading(false); // Finished loading attempt
    }, []);
+
+    // Function to get the current mock user (avoids direct localStorage reads in child components)
+    const getMockUser = (): MockUser | null => {
+        return mockUser;
+    };
+
+    // Function to save the mock user (updates state and localStorage)
+    const saveMockUser = (user: MockUser) => {
+        if (typeof window !== 'undefined') {
+            localStorage.setItem(MOCK_USER_STORAGE_KEY, JSON.stringify(user));
+        }
+        setMockUser(user);
+    };
+
+    // Function to clear the mock user (updates state and localStorage)
+    const clearMockUser = () => {
+        if (typeof window !== 'undefined') {
+            localStorage.removeItem(MOCK_USER_STORAGE_KEY);
+        }
+        setMockUser(null);
+    }
 
 
   const handleLoginSuccess = (username: string) => {
-    const user = getMockUser();
+    const user = getMockUser(); // Use the state-backed getter
     // Basic check - in reality, server validates credentials & key
+    // The login form already performed the necessary checks based on getMockUser() data
     if (user && user.username.toLowerCase() === username.toLowerCase()) {
       setIsAuthenticated(true);
-      setCurrentUser(user);
+      setCurrentUser(user); // Set the currently logged-in user state
       toast({ title: "Login Successful", description: `Welcome back, ${username}!` });
     } else {
-        // This case should ideally be handled within LoginRegisterForm's validation
-        toast({ title: "Login Failed", description: "Invalid credentials or key file.", variant: "destructive" });
+        // This case should ideally not happen if LoginRegisterForm logic is correct
+        console.error("Login success handler called but user data mismatch.");
+        toast({ title: "Login Failed", description: "An unexpected error occurred during login.", variant: "destructive" });
     }
   };
 
   const handleRegisterSuccess = (username: string, keyBlob: Blob) => {
-    // Simulate password hashing and store user data
+    // Simulate password hashing and prepare user data
+    // In a real app, the server would handle password hashing.
     const passwordHash = `hashed_${username}_password`; // Simple simulation
     const reader = new FileReader();
+
     reader.onload = (event) => {
         const keyFileData = event.target?.result as string;
+        if (!keyFileData) {
+             toast({ title: "Registration Failed", description: "Could not read generated key file.", variant: "destructive" });
+             return;
+        }
         const newUser: MockUser = { username, passwordHash, keyFileData };
-        saveMockUser(newUser);
+        saveMockUser(newUser); // Save the new user to state and localStorage
 
         // Trigger key file download
-        const url = URL.createObjectURL(keyBlob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `${username}_medicrypt_key.txt`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        try {
+            const url = URL.createObjectURL(keyBlob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${username}_medicrypt_key.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
 
-        toast({
-            title: "Registration Successful",
-            description: "Please log in with your new credentials and the downloaded key file.",
-        });
-        // Optionally automatically log in or redirect to login view
-        // setIsAuthenticated(true);
-        // setCurrentUser(newUser);
+             toast({
+                title: "Registration Successful",
+                description: "Key file downloaded. Please log in with your new credentials.",
+            });
+        } catch (downloadError) {
+             console.error("Failed to trigger key file download:", downloadError);
+             toast({ title: "Registration Warning", description: "Account created, but key file download failed. Please try registering again or contact support.", variant: "destructive" });
+              // Consider rolling back the user save or providing manual download instructions
+              clearMockUser(); // Rollback user save on download failure for this demo
+        }
     };
      reader.onerror = () => {
-        toast({ title: "Registration Failed", description: "Could not process key file.", variant: "destructive" });
+        toast({ title: "Registration Failed", description: "Could not process key file data.", variant: "destructive" });
     };
-    reader.readAsText(keyBlob); // Or readAsDataURL if storing base64
+    // Read blob as text to store it; adjust if storing as base64 needed later
+    reader.readAsText(keyBlob);
   };
 
   const handleLogout = () => {
     setIsAuthenticated(false);
     setCurrentUser(null);
-    // clearMockUser(); // Optionally clear stored user data on logout
+    // It's generally good practice to clear sensitive user data on logout,
+    // even in a mock scenario, unless you specifically need persistence across sessions without login.
+    // clearMockUser(); // Uncomment if you want to force re-registration/login after logout
     toast({ title: "Logged Out", description: "You have been successfully logged out." });
   };
+
+   // Show loading state until client-side check is complete
+   if (isLoading) {
+        return (
+             <main className="flex min-h-screen flex-col items-center justify-center p-4 sm:p-8 lg:p-12 bg-secondary">
+                <p>Loading...</p>
+             </main>
+        );
+    }
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-4 sm:p-8 lg:p-12 bg-secondary">
@@ -111,13 +152,12 @@ export default function Home() {
         <LoginRegisterForm
           onLoginSuccess={handleLoginSuccess}
           onRegisterSuccess={handleRegisterSuccess}
-          getMockUser={getMockUser} // Pass getter function
+          getMockUser={getMockUser} // Pass state-backed getter function
         />
       ) : (
         <MediCryptApp onLogout={handleLogout} username={currentUser?.username || 'User'} />
       )}
-       {/* Toaster should be at the root or layout level, but included here for self-containment */}
-       {/* <Toaster /> */}
+       {/* Toaster is included via RootLayout */}
     </main>
   );
 }
