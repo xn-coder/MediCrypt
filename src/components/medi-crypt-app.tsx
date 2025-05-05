@@ -8,6 +8,7 @@ import { Upload, Download, Lock, Unlock, Loader2, RotateCcw, FileKey, LogOut, Sh
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { ImageUpload } from "@/components/image-upload";
+import { Input } from "@/components/ui/input"; // Ensure Input is imported
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -32,7 +33,23 @@ const encryptImageRubik = async (file: File, key: string): Promise<{ encryptedFi
   console.log("Encrypting image with Rubik's algorithm:", file.name, "using key:", key);
   const startTime = performance.now();
   await new Promise(resolve => setTimeout(resolve, 1500 + Math.random() * 1000)); // Simulate delay
-  const encryptedBlob = new Blob([`encrypted-${file.name}-${key}`], { type: "application/octet-stream" });
+
+  // Simulate creating encrypted content based on file name and key
+  const arrayBuffer = await file.arrayBuffer();
+  const dataView = new DataView(arrayBuffer);
+  // Simple "encryption": XOR with key characters (very insecure, just for demo)
+  for (let i = 0; i < dataView.byteLength; i++) {
+    dataView.setUint8(i, dataView.getUint8(i) ^ key.charCodeAt(i % key.length));
+  }
+  // Add metadata prefix (crude simulation)
+  const prefix = `encrypted-${file.name}-key:${key}-type:${file.type}-`;
+  const prefixBuffer = new TextEncoder().encode(prefix);
+  const finalBuffer = new Uint8Array(prefixBuffer.byteLength + arrayBuffer.byteLength);
+  finalBuffer.set(prefixBuffer, 0);
+  finalBuffer.set(new Uint8Array(arrayBuffer), prefixBuffer.byteLength);
+
+  const encryptedBlob = new Blob([finalBuffer], { type: "application/octet-stream" });
+
   const endTime = performance.now();
   console.log("Encryption complete.");
   return { encryptedFile: encryptedBlob, encryptionTime: endTime - startTime };
@@ -48,26 +65,88 @@ const generateKeySM4 = async (): Promise<string> => {
 };
 
 // Simulate Decryption
-const decryptImageRubik = async (encryptedFile: Blob, key: string): Promise<{ decryptedFile: Blob, decryptionTime: number }> => {
+const decryptImageRubik = async (encryptedFile: Blob, key: string): Promise<{ decryptedFile: Blob, decryptionTime: number, originalName: string, originalType: string }> => {
     console.log("Decrypting image with key:", key);
     const startTime = performance.now();
     await new Promise(resolve => setTimeout(resolve, 1500 + Math.random() * 1000)); // Simulate delay
 
-    // Simulate getting original filename (crude simulation)
-    const text = await encryptedFile.text();
-     // Basic check if the text looks like our encrypted format
-     if (!text.startsWith('encrypted-') || text.split('-').length < 3) {
-        throw new Error("Invalid encrypted data format or incorrect key.");
+    const buffer = await encryptedFile.arrayBuffer();
+    const textDecoder = new TextDecoder('utf-8', { fatal: false }); // Use non-fatal decoding
+    let textContent = '';
+    try {
+         textContent = textDecoder.decode(new Uint8Array(buffer.slice(0, Math.min(200, buffer.byteLength)))); // Decode only the start to find metadata
+    } catch (e) {
+        console.warn("Could not decode start of file as text for metadata extraction.");
+         throw new Error("Invalid encrypted file format or incomplete data.");
     }
-    const originalName = text.split('-')[1]; // Very basic extraction
-    const originalType = 'image/png'; // Assume original type for simulation
 
-    // Simulate creating the original file content
-    const decryptedBlob = new Blob([`decrypted-${originalName}`], { type: originalType });
+
+    // --- Improved Metadata Extraction (Simulation) ---
+    const encryptedPrefix = `encrypted-`;
+    const keyPrefix = `-key:${key}-`;
+    const typePrefix = `-type:`;
+    const endMetadataMarker = '-'; // Assuming the filename ends the first part
+
+    if (!textContent.startsWith(encryptedPrefix)) {
+        throw new Error("Invalid encrypted file: Missing 'encrypted-' prefix.");
+    }
+
+     // Check if the provided key matches the one in the metadata
+    const keyIndex = textContent.indexOf(keyPrefix);
+    if (keyIndex === -1) {
+        // Fallback check: Maybe the key isn't in the filename part if the format varies
+        if (!textContent.includes(`-key:${key}-`)) {
+             throw new Error("Incorrect decryption key provided.");
+        }
+        // If key is found later, proceed, but extraction might be less reliable
+        console.warn("Key marker found later than expected, format might be unusual.");
+    }
+
+    const typeIndex = textContent.indexOf(typePrefix);
+    if (typeIndex === -1) {
+        throw new Error("Invalid encrypted file: Missing '-type:' marker.");
+    }
+
+    // Extract original name (between 'encrypted-' and '-key:')
+    const nameEndIndex = textContent.indexOf(keyPrefix); // Use keyPrefix as the boundary
+     if (nameEndIndex === -1) {
+         throw new Error("Invalid encrypted file: Could not determine end of filename.");
+     }
+    const originalName = textContent.substring(encryptedPrefix.length, nameEndIndex);
+
+    // Extract original type (between '-type:' and the next '-')
+    const typeStartIndex = typeIndex + typePrefix.length;
+    let typeEndIndex = textContent.indexOf(endMetadataMarker, typeStartIndex);
+     if (typeEndIndex === -1) {
+        // Assume type string goes to the end of the decoded slice if no more '-'
+        typeEndIndex = textContent.length;
+        console.warn("Type marker might be at the end of the metadata slice.");
+        // This could be problematic if the slice is too short.
+    }
+    const originalType = textContent.substring(typeStartIndex, typeEndIndex);
+
+     // Find the actual end of the full metadata prefix in the original buffer
+    const fullMetadataPrefix = `encrypted-${originalName}-key:${key}-type:${originalType}-`;
+    const fullMetadataBuffer = new TextEncoder().encode(fullMetadataPrefix);
+    const metadataLength = fullMetadataBuffer.byteLength;
+
+    if (buffer.byteLength < metadataLength) {
+         throw new Error("Invalid encrypted file: Data shorter than expected metadata.");
+    }
+
+
+    // --- Decryption Logic (Simulation: XOR back) ---
+    const encryptedDataBuffer = buffer.slice(metadataLength);
+    const decryptedDataView = new DataView(encryptedDataBuffer);
+    for (let i = 0; i < decryptedDataView.byteLength; i++) {
+        decryptedDataView.setUint8(i, decryptedDataView.getUint8(i) ^ key.charCodeAt(i % key.length));
+    }
+
+    const decryptedBlob = new Blob([encryptedDataBuffer], { type: originalType || 'application/octet-stream' }); // Use extracted type
 
     const endTime = performance.now();
-    console.log("Decryption complete.");
-    return { decryptedFile: decryptedBlob, decryptionTime: endTime - startTime };
+    console.log(`Decryption complete. Original name: ${originalName}, Original type: ${originalType}`);
+    return { decryptedFile: decryptedBlob, decryptionTime: endTime - startTime, originalName, originalType };
 };
 
 // Simulate Performance/Security Analysis
@@ -107,6 +186,7 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
   const [mode, setMode] = React.useState<Mode>("encrypt"); // 'encrypt' or 'decrypt'
   const [analysisResults, setAnalysisResults] = React.useState<{ robustness: number; resistance: string } | null>(null);
   const [processTime, setProcessTime] = React.useState<number | null>(null);
+  const [decryptedFileInfo, setDecryptedFileInfo] = React.useState<{ name: string; type: string } | null>(null);
 
 
   const { toast } = useToast();
@@ -114,6 +194,7 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
   // Effect to create preview URL when a file is selected or decrypted data is available
   React.useEffect(() => {
      let objectUrl: string | null = null;
+     let currentDecryptedData = decryptedData; // Capture state for cleanup closure
 
     if (selectedFile && mode === 'encrypt') {
        objectUrl = URL.createObjectURL(selectedFile);
@@ -129,11 +210,13 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
       setProgress(0);
       setAnalysisResults(null);
       setProcessTime(null);
+      setDecryptedFileInfo(null);
 
-    } else if (decryptedData && mode === 'decrypt') {
+
+    } else if (currentDecryptedData && mode === 'decrypt') {
         // Check if decryptedData is an image type before creating URL
-        if (decryptedData.type.startsWith('image/')) {
-            objectUrl = URL.createObjectURL(decryptedData);
+        if (currentDecryptedData.type.startsWith('image/')) {
+            objectUrl = URL.createObjectURL(currentDecryptedData);
             setDecryptedPreviewUrl(objectUrl);
         } else {
             // Handle non-image decrypted data
@@ -148,10 +231,21 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
         if (objectUrl) {
             URL.revokeObjectURL(objectUrl);
         }
+        // Also clean up decrypted preview URL if component unmounts or mode changes
+         if (decryptedPreviewUrl) {
+            URL.revokeObjectURL(decryptedPreviewUrl);
+        }
     };
-  }, [selectedFile, decryptedData, mode]); // Rerun effect
+  // Add decryptedPreviewUrl to dependency array for cleanup
+  }, [selectedFile, decryptedData, mode, decryptedPreviewUrl]); // Rerun effect
 
   const clearPreview = () => {
+    if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+    }
+     if (decryptedPreviewUrl) {
+        URL.revokeObjectURL(decryptedPreviewUrl);
+    }
     setPreviewUrl(null);
     setSelectedFile(null);
     setProcessedFile(null);
@@ -164,12 +258,23 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
     setError(null);
     setAnalysisResults(null);
     setProcessTime(null);
+    setDecryptedFileInfo(null);
      // Also clear the file input if needed (handled in ImageUpload)
      const fileInput = document.getElementById('medical-image-upload') as HTMLInputElement;
      if (fileInput) fileInput.value = "";
   };
 
   const handleFileChange = (file: File | null) => {
+     // Revoke previous URLs before setting new state
+    if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+        setPreviewUrl(null);
+    }
+    if (decryptedPreviewUrl) {
+        URL.revokeObjectURL(decryptedPreviewUrl);
+        setDecryptedPreviewUrl(null);
+    }
+
     setSelectedFile(file);
     // Reset relevant states when a new file is uploaded
     if (file) {
@@ -177,13 +282,14 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
         setProcessedFile(null);
         setEncryptedData(null);
         setDecryptedData(null);
-        setDecryptedPreviewUrl(null);
+        // setDecryptedPreviewUrl(null); // Handled by revoke above
         setEncryptionKey(null);
         setError(null);
         setStatus("idle");
         setProgress(0);
         setAnalysisResults(null);
         setProcessTime(null);
+        setDecryptedFileInfo(null);
          if (mode === 'decrypt') {
             setDecryptionKeyInput(''); // Clear key input if switching file in decrypt mode
         }
@@ -203,6 +309,7 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
     setProcessTime(null);
     setDecryptedData(null); // Clear previous decryption results
     setDecryptedPreviewUrl(null);
+    setDecryptedFileInfo(null);
     setEncryptionKey(null); // Clear previous key
 
     try {
@@ -271,7 +378,8 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
       setAnalysisResults(null); // Clear analysis results for decryption
       setProcessTime(null);
       setDecryptedData(null);
-      setDecryptedPreviewUrl(null);
+      setDecryptedPreviewUrl(null); // Clear previous decrypted preview
+      setDecryptedFileInfo(null);
 
       // The data to decrypt is always the currently selected file in decrypt mode
       const dataToDecrypt = selectedFile;
@@ -280,17 +388,21 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
           setStatus("decrypting");
           setProgress(50); // Decryption is one step
 
-          const { decryptedFile, decryptionTime } = await decryptImageRubik(dataToDecrypt, decryptionKeyInput);
-          setDecryptedData(decryptedFile);
-          setProcessTime(decryptionTime);
-          setProgress(100);
-          setStatus("complete");
+          const { decryptedFile, decryptionTime, originalName, originalType } = await decryptImageRubik(dataToDecrypt, decryptionKeyInput);
+
+           // Update state: order matters for useEffect dependency on decryptedData
+           setDecryptedData(decryptedFile); // Set data first
+           setDecryptedFileInfo({ name: originalName, type: originalType });
+           setProcessTime(decryptionTime);
+           setProgress(100);
+           setStatus("complete");
+
 
           // Show appropriate toast based on whether it's an image
            if (decryptedFile.type.startsWith('image/')) {
               toast({ title: "Decryption Successful", description: `Image decrypted in ${decryptionTime.toFixed(2)} ms. Preview available.` });
           } else {
-               toast({ title: "Decryption Successful", description: `File decrypted in ${decryptionTime.toFixed(2)} ms. Download available (preview not supported for this type).` });
+               toast({ title: "Decryption Successful", description: `File '${originalName}' decrypted in ${decryptionTime.toFixed(2)} ms. Download available (preview not supported for this type).` });
           }
 
 
@@ -300,6 +412,9 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
           setError(errorMessage);
           setStatus("error");
           setProgress(0);
+          setDecryptedData(null); // Ensure decryptedData is null on error
+          setDecryptedPreviewUrl(null);
+          setDecryptedFileInfo(null);
           toast({ title: "Decryption Failed", description: errorMessage, variant: "destructive" });
       }
   };
@@ -307,26 +422,32 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
 
   const handleDownload = (blob: Blob | null, defaultFilename: string) => {
     if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
 
-     // Try to sanitize filename, remove .encrypted if present
     let filename = defaultFilename;
-    if (mode === 'decrypt' && filename.endsWith('.encrypted')) {
-        filename = filename.substring(0, filename.length - '.encrypted'.length);
-    } else if (mode === 'encrypt' && !filename.endsWith('.encrypted')) {
-        // Append .encrypted if encrypting and not already present
+
+     // Determine filename based on mode and available info
+    if (mode === 'decrypt' && decryptedFileInfo) {
+        filename = decryptedFileInfo.name || 'decrypted_file'; // Use extracted name
+    } else if (mode === 'encrypt' && selectedFile) {
+        filename = selectedFile.name;
+        // Append .encrypted suffix safely
         const parts = filename.split('.');
         if (parts.length > 1) {
-            parts.splice(parts.length - 1, 0, 'encrypted');
-            filename = parts.join('.');
+            const ext = parts.pop();
+            filename = `${parts.join('.')}.encrypted.${ext}`;
         } else {
              filename = `${filename}.encrypted`;
         }
+    } else {
+         // Fallback filename
+         filename = mode === 'encrypt' ? 'encrypted_output' : 'decrypted_output';
     }
 
-    a.download = filename || (mode === 'encrypt' ? 'encrypted_image' : 'decrypted_data');
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -336,26 +457,14 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
    const handleModeChange = (newMode: Mode) => {
         setMode(newMode);
         // Reset states when switching modes
-        setSelectedFile(null);
-        setPreviewUrl(null);
-        setProcessedFile(null);
-        setEncryptedData(null);
-        setDecryptedData(null);
-        setDecryptedPreviewUrl(null);
-        setEncryptionKey(null);
+        clearPreview(); // Use clearPreview to handle URL revocation and state reset
         setDecryptionKeyInput('');
-        setStatus("idle");
-        setProgress(0);
-        setError(null);
-        setAnalysisResults(null);
-        setProcessTime(null);
-         // Clear file input
-        const fileInput = document.getElementById('medical-image-upload') as HTMLInputElement;
-        if (fileInput) fileInput.value = "";
+        // Optionally reset mode, or keep current mode? Let's keep current mode.
+        // setMode('encrypt');
     };
 
     const handleReset = () => {
-        clearPreview();
+        clearPreview(); // Handles state reset and URL revocation
         setDecryptionKeyInput('');
         // Optionally reset mode, or keep current mode? Let's keep current mode.
         // setMode('encrypt');
@@ -448,13 +557,16 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
            {mode === 'decrypt' && (
                 <div className="flex items-center space-x-2">
                      <FileKey className="h-5 w-5 text-muted-foreground flex-shrink-0"/>
+                     {/* Ensure Input component is correctly rendered */}
                      <Input
+                        id="decryption-key-input" // Added ID for potential debugging/targeting
                         type="text"
                         placeholder="Enter Decryption Key (e.g., sm4key-...)"
                         value={decryptionKeyInput}
                         onChange={(e) => setDecryptionKeyInput(e.target.value)}
                         className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                        disabled={isLoading || status === 'complete'}
+                        disabled={isLoading || (status === 'complete' && mode === 'decrypt')} // Disable after successful decrypt
+                        aria-label="Decryption Key"
                     />
                 </div>
             )}
@@ -500,12 +612,12 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
                  </div>
             )}
              {/* Decrypted Non-Image Info */}
-             {mode === 'decrypt' && decryptedData && !decryptedPreviewUrl && status === 'complete' && (
+             {mode === 'decrypt' && decryptedData && !decryptedPreviewUrl && status === 'complete' && decryptedFileInfo && (
                  <Alert variant="default" className="bg-secondary/50 border-border">
                     <Download className="h-4 w-4" />
                     <AlertTitle>Decryption Complete</AlertTitle>
                     <AlertDescription>
-                        The decrypted file ({decryptedData.name || 'unknown file'}) is ready for download. Preview is not available for this file type.
+                        The decrypted file ({decryptedFileInfo.name || 'unknown file'}) is ready for download. Preview is not available for this file type ({decryptedFileInfo.type || 'unknown type'}).
                          {processTime != null && ` (Decryption Time: ${processTime.toFixed(2)} ms)`}
                     </AlertDescription>
                  </Alert>
@@ -515,13 +627,13 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
         <CardFooter className="flex flex-col sm:flex-row justify-between gap-3 pt-4">
           <div className="flex gap-2 w-full sm:w-auto flex-wrap justify-center sm:justify-start">
             {mode === 'encrypt' && (
-                 <Button onClick={handleEncrypt} disabled={isLoading || !selectedFile || status === 'complete'} className="w-full sm:w-auto flex-1 sm:flex-none min-w-[120px] bg-accent hover:bg-accent/90">
+                 <Button onClick={handleEncrypt} disabled={isLoading || !selectedFile || (status === 'complete' && mode === 'encrypt')} className="w-full sm:w-auto flex-1 sm:flex-none min-w-[120px] bg-accent hover:bg-accent/90">
                     {isLoading && ['preprocessing', 'generating_key', 'encrypting', 'analyzing'].includes(status) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Lock className="mr-2 h-4 w-4" />}
                     {status === 'preprocessing' ? 'Preprocessing...' : status === 'generating_key' ? 'Generating Key...' : status === 'encrypting' ? 'Encrypting...' : status === 'analyzing' ? 'Analyzing...' : 'Encrypt'}
                  </Button>
             )}
              {mode === 'decrypt' && (
-                 <Button onClick={handleDecrypt} disabled={isLoading || !selectedFile || !decryptionKeyInput || status === 'complete'} className="w-full sm:w-auto flex-1 sm:flex-none min-w-[120px] bg-accent hover:bg-accent/90">
+                 <Button onClick={handleDecrypt} disabled={isLoading || !selectedFile || !decryptionKeyInput || (status === 'complete' && mode === 'decrypt')} className="w-full sm:w-auto flex-1 sm:flex-none min-w-[120px] bg-accent hover:bg-accent/90">
                      {isLoading && status === 'decrypting' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Unlock className="mr-2 h-4 w-4" />}
                     {status === 'decrypting' ? 'Decrypting...' : 'Decrypt'}
                  </Button>
@@ -540,7 +652,7 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
                  </Button>
              )}
               {mode === 'decrypt' && decryptedData && status === 'complete' && (
-                 <Button variant="outline" onClick={() => handleDownload(decryptedData, selectedFile?.name || 'decrypted_data')} className="w-full sm:w-auto flex-1 sm:flex-none min-w-[150px]">
+                 <Button variant="outline" onClick={() => handleDownload(decryptedData, decryptedFileInfo?.name || 'decrypted_data')} className="w-full sm:w-auto flex-1 sm:flex-none min-w-[150px]">
                     <Download className="mr-2 h-4 w-4" />
                     Download Decrypted
                  </Button>
