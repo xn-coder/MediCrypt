@@ -14,6 +14,7 @@ interface MockUser {
   username: string;
   passwordHash: string; // Simulate a hashed password
   keyFileData: string; // Simulate key file content
+  encryptedFiles?: { [originalFilename: string]: string }; // Store { originalFilename: decryptionKey }
 }
 
 const MOCK_USER_STORAGE_KEY = "mockUserData";
@@ -34,7 +35,11 @@ export default function Home() {
         const storedData = localStorage.getItem(MOCK_USER_STORAGE_KEY);
         if (storedData) {
             try {
-                const parsedUser = JSON.parse(storedData);
+                const parsedUser: MockUser = JSON.parse(storedData);
+                // Ensure encryptedFiles exists
+                if (!parsedUser.encryptedFiles) {
+                    parsedUser.encryptedFiles = {};
+                }
                 setMockUser(parsedUser);
                 // Optionally, you could auto-login here if a session token was stored
                 // For this demo, we require login each time.
@@ -53,20 +58,53 @@ export default function Home() {
     };
 
     // Function to save the mock user (updates state and localStorage)
-    const saveMockUser = (user: MockUser) => {
-        if (typeof window !== 'undefined') {
-            localStorage.setItem(MOCK_USER_STORAGE_KEY, JSON.stringify(user));
+    const saveMockUser = (user: MockUser | null) => {
+        if (user) {
+             if (typeof window !== 'undefined') {
+                localStorage.setItem(MOCK_USER_STORAGE_KEY, JSON.stringify(user));
+             }
+            setMockUser(user);
+        } else {
+            if (typeof window !== 'undefined') {
+                 localStorage.removeItem(MOCK_USER_STORAGE_KEY);
+            }
+            setMockUser(null);
         }
-        setMockUser(user);
     };
 
     // Function to clear the mock user (updates state and localStorage)
     const clearMockUser = () => {
-        if (typeof window !== 'undefined') {
-            localStorage.removeItem(MOCK_USER_STORAGE_KEY);
-        }
-        setMockUser(null);
+        saveMockUser(null);
     }
+
+    // Function to update only the encrypted files part of the user data
+    const updateUserEncryptedFiles = (originalFilename: string, decryptionKey: string) => {
+        if (mockUser) {
+            const updatedUser: MockUser = {
+                ...mockUser,
+                encryptedFiles: {
+                    ...mockUser.encryptedFiles,
+                    [originalFilename]: decryptionKey,
+                },
+            };
+            saveMockUser(updatedUser);
+            // Update currentUser state as well if the logged-in user is the one being updated
+            if (currentUser && currentUser.username === updatedUser.username) {
+                 setCurrentUser(updatedUser);
+            }
+             toast({
+                title: "Encryption Key Saved",
+                description: `Key for '${originalFilename}' stored in your profile.`,
+            });
+        } else {
+            console.error("Attempted to update encrypted files, but no user data found.");
+             toast({
+                title: "Error Saving Key",
+                description: "Could not save the encryption key. User data not found.",
+                variant: "destructive",
+             });
+        }
+    };
 
 
   const handleLoginSuccess = (username: string) => {
@@ -75,7 +113,9 @@ export default function Home() {
     // The login form already performed the necessary checks based on getMockUser() data
     if (user && user.username.toLowerCase() === username.toLowerCase()) {
       setIsAuthenticated(true);
-      setCurrentUser(user); // Set the currently logged-in user state
+      // Ensure encryptedFiles is initialized if missing
+      const loggedInUser = { ...user, encryptedFiles: user.encryptedFiles || {} };
+      setCurrentUser(loggedInUser); // Set the currently logged-in user state
       toast({ title: "Login Successful", description: `Welcome back, ${username}!` });
     } else {
         // This case should ideally not happen if LoginRegisterForm logic is correct
@@ -96,7 +136,8 @@ export default function Home() {
              toast({ title: "Registration Failed", description: "Could not read generated key file.", variant: "destructive" });
              return;
         }
-        const newUser: MockUser = { username, passwordHash, keyFileData };
+        // Initialize encryptedFiles as an empty object for new users
+        const newUser: MockUser = { username, passwordHash, keyFileData, encryptedFiles: {} };
         saveMockUser(newUser); // Save the new user to state and localStorage
 
         // Trigger key file download
@@ -155,7 +196,13 @@ export default function Home() {
           getMockUser={getMockUser} // Pass state-backed getter function
         />
       ) : (
-        <MediCryptApp onLogout={handleLogout} username={currentUser?.username || 'User'} />
+        // Pass encryptedFiles and the update function to MediCryptApp
+        <MediCryptApp
+            onLogout={handleLogout}
+            username={currentUser?.username || 'User'}
+            encryptedFiles={currentUser?.encryptedFiles || {}}
+            onUpdateEncryptedFiles={updateUserEncryptedFiles}
+        />
       )}
        {/* Toaster is included via RootLayout */}
     </main>

@@ -42,7 +42,8 @@ const encryptImageRubik = async (file: File, key: string): Promise<{ encryptedFi
     dataView.setUint8(i, dataView.getUint8(i) ^ key.charCodeAt(i % key.length));
   }
   // Construct metadata prefix
-  const metadataPrefix = `encrypted-${file.name}-key:${key}-type:${file.type}-`;
+  // IMPORTANT: Store original filename and type without the key in metadata for decryption extraction
+  const metadataPrefix = `encrypted-${file.name}-type:${file.type}-`;
   const metadataBuffer = new TextEncoder().encode(metadataPrefix);
 
   // Create the final buffer: metadata + encrypted data
@@ -77,12 +78,12 @@ const decryptImageRubik = async (encryptedFile: Blob, providedKey: string): Prom
 
     // Define metadata markers
     const encryptedMarker = `encrypted-`;
-    const keyMarker = `-key:`;
+    // const keyMarker = `-key:`; // Key is no longer in metadata
     const typeMarker = `-type:`;
     const endMetadataMarker = '-'; // The final marker indicating end of metadata header
 
     // Decode a sufficient initial part of the buffer to capture potential metadata
-    // Ensure this limit is large enough for typical filenames/types + key length
+    // Ensure this limit is large enough for typical filenames/types
     const metadataSearchLimit = Math.min(2048, buffer.byteLength); // Increased limit
     let headerText = '';
     try {
@@ -93,50 +94,35 @@ const decryptImageRubik = async (encryptedFile: Blob, providedKey: string): Prom
          throw new Error("Invalid encrypted file format or corrupted data.");
     }
 
-    // --- Metadata Extraction and Verification ---
+    // --- Metadata Extraction ---
 
     // 1. Check for encrypted marker
     if (!headerText.startsWith(encryptedMarker)) {
         throw new Error(`Invalid encrypted file format: Missing '${encryptedMarker}' prefix. Ensure you are uploading a file encrypted by this application.`);
     }
 
-    // 2. Find key marker
-    const keyStartIndex = headerText.indexOf(keyMarker);
-    if (keyStartIndex === -1) {
-        throw new Error(`Invalid encrypted file: Missing '${keyMarker}' marker within the first ${metadataSearchLimit} bytes.`);
+    // 2. Find type marker (Key marker is removed)
+    const typeStartIndex = headerText.indexOf(typeMarker);
+    if (typeStartIndex === -1) {
+         throw new Error(`Invalid encrypted file: Missing '${typeMarker}' marker within the first ${metadataSearchLimit} bytes.`);
     }
 
     // 3. Extract original name
-    const originalName = headerText.substring(encryptedMarker.length, keyStartIndex);
+    const originalName = headerText.substring(encryptedMarker.length, typeStartIndex);
     console.log(`Extracted originalName: '${originalName}'`);
-
-    // 4. Find type marker
-    const typeStartIndex = headerText.indexOf(typeMarker, keyStartIndex + keyMarker.length); // Search *after* the key marker
-    if (typeStartIndex === -1) {
-        throw new Error(`Invalid encrypted file: Missing '${typeMarker}' marker after key information within the first ${metadataSearchLimit} bytes.`);
+    if (!originalName) {
+         throw new Error("Invalid encrypted file: Could not extract original filename from metadata.");
     }
 
-    // 5. Extract the key stored in the metadata
-    const metadataKey = headerText.substring(keyStartIndex + keyMarker.length, typeStartIndex);
-    console.log(`Extracted metadataKey: '${metadataKey}'`);
-    if (!metadataKey) {
-         throw new Error("Invalid encrypted file: Could not extract key from metadata.");
-    }
 
-    // 6. *** Compare the provided key with the key from metadata ***
-    if (metadataKey !== providedKey) {
-        console.error(`Key mismatch: Provided='${providedKey}', Found in metadata='${metadataKey}'`);
-        throw new Error("Incorrect decryption key provided.");
-    }
-
-    // 7. Find the end marker for the type information
+    // 4. Find the end marker for the type information
     const typeValueStartIndex = typeStartIndex + typeMarker.length;
     const typeEndIndex = headerText.indexOf(endMetadataMarker, typeValueStartIndex); // Search for the *next* hyphen
     if (typeEndIndex === -1) {
         throw new Error(`Invalid encrypted file: Missing final '${endMetadataMarker}' marker after type information within the first ${metadataSearchLimit} bytes.`);
     }
 
-    // 8. Extract original type
+    // 5. Extract original type
     const originalType = headerText.substring(typeValueStartIndex, typeEndIndex);
     console.log(`Extracted originalType: '${originalType}'`);
      if (!originalType) {
@@ -144,8 +130,8 @@ const decryptImageRubik = async (encryptedFile: Blob, providedKey: string): Prom
          // Allow empty type, will fallback to 'application/octet-stream'
     }
 
-    // 9. Reconstruct the full metadata prefix to calculate its exact byte length
-    const fullMetadataPrefix = `${encryptedMarker}${originalName}${keyMarker}${metadataKey}${typeMarker}${originalType}${endMetadataMarker}`;
+    // 6. Reconstruct the full metadata prefix to calculate its exact byte length
+    const fullMetadataPrefix = `${encryptedMarker}${originalName}${typeMarker}${originalType}${endMetadataMarker}`;
     const metadataBuffer = new TextEncoder().encode(fullMetadataPrefix);
     const metadataLength = metadataBuffer.byteLength;
     console.log(`Calculated metadataLength: ${metadataLength} bytes`);
@@ -155,17 +141,18 @@ const decryptImageRubik = async (encryptedFile: Blob, providedKey: string): Prom
     }
 
     // --- Decryption Logic ---
-    // 10. Slice the buffer to get only the encrypted data part
+    // 7. Slice the buffer to get only the encrypted data part
     const encryptedDataBuffer = buffer.slice(metadataLength);
     console.log(`Encrypted data size: ${encryptedDataBuffer.byteLength} bytes`);
 
-    // 11. Perform XOR decryption using the *provided* key
+    // 8. Perform XOR decryption using the *provided* key
+    // NOTE: We are NOT verifying the key against metadata anymore. The correctness relies on the user providing the right key.
     const decryptedDataView = new DataView(encryptedDataBuffer);
     for (let i = 0; i < decryptedDataView.byteLength; i++) {
         decryptedDataView.setUint8(i, decryptedDataView.getUint8(i) ^ providedKey.charCodeAt(i % providedKey.length));
     }
 
-    // 12. Create the decrypted Blob
+    // 9. Create the decrypted Blob
     const decryptedBlob = new Blob([encryptedDataBuffer], { type: originalType || 'application/octet-stream' }); // Use extracted type or fallback
 
     const endTime = performance.now();
@@ -193,10 +180,12 @@ type Mode = "encrypt" | "decrypt";
 interface MediCryptAppProps {
   onLogout: () => void;
   username: string;
+  encryptedFiles: { [originalFilename: string]: string }; // Pass existing keys
+  onUpdateEncryptedFiles: (originalFilename: string, decryptionKey: string) => void; // Function to save new keys
 }
 
 
-export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
+export function MediCryptApp({ onLogout, username, encryptedFiles, onUpdateEncryptedFiles }: MediCryptAppProps) {
   const [selectedFile, setSelectedFile] = React.useState<File | null>(null);
   const [processedFile, setProcessedFile] = React.useState<File | null>(null); // After preprocessing
   const [encryptedData, setEncryptedData] = React.useState<Blob | null>(null);
@@ -205,7 +194,7 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
   const [decryptedPreviewUrl, setDecryptedPreviewUrl] = React.useState<string | null>(null);
   const [status, setStatus] = React.useState<ProcessStatus>("idle");
   const [progress, setProgress] = React.useState(0);
-  const [encryptionKey, setEncryptionKey] = React.useState<string | null>(null);
+  const [encryptionKey, setEncryptionKey] = React.useState<string | null>(null); // Generated during encryption
   const [decryptionKeyInput, setDecryptionKeyInput] = React.useState<string>(""); // For user input
   const [error, setError] = React.useState<string | null>(null);
   const [mode, setMode] = React.useState<Mode>("encrypt"); // 'encrypt' or 'decrypt'
@@ -218,6 +207,41 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
 
    // Cleanup ref to store the decryptedPreviewUrl for reliable cleanup
   const decryptedPreviewUrlRef = React.useRef<string | null>(null);
+
+   // Effect to potentially prefill decryption key when a file is selected in decrypt mode
+   React.useEffect(() => {
+        if (mode === 'decrypt' && selectedFile && encryptedFiles) {
+             // Try to find a stored key based on the *selected* filename (which is the encrypted filename)
+             // This requires a way to map the encrypted filename back to the original or storing the key with the encrypted filename itself.
+             // Let's adjust the approach: We need the ORIGINAL filename to look up the key.
+             // We can only reliably get the original filename AFTER successful decryption.
+             // SO, let's check if the ORIGINAL filename (if available from decryption) has a stored key.
+
+             // A simpler approach for now: If the *selected* file's name (which *is* the encrypted file name)
+             // somehow matches a key in the `encryptedFiles` map (less likely but possible if naming was consistent), use it.
+             // OR, if we adapt to store keys by ENCRYPTED filename (less user-friendly).
+             // Let's stick to the user entering the key or finding it after decryption.
+
+             // New approach: Check if the *currently selected file's name* has a corresponding key
+             // This assumes the `encryptedFiles` keys are the *original* filenames.
+             // This won't work directly as `selectedFile.name` is the *encrypted* name.
+
+             // Let's instead try to extract the original name from the encrypted file *preview* data
+             // if possible, or simply rely on user input.
+
+             // **Revised Strategy:**
+             // When a file is selected in decrypt mode, we will NOT try to prefill the key.
+             // The user must enter the key associated with the *original* file.
+             // The `encryptedFiles` prop can be used later, perhaps to display a list of known files/keys.
+             setDecryptionKeyInput(""); // Reset key input when a new file is selected for decryption
+             toast({
+                title: "Encrypted File Selected",
+                description: "Please enter the corresponding decryption key below. You can find saved keys in your profile (feature to be added).",
+                duration: 7000
+            });
+        }
+   }, [selectedFile, mode]); // Removed encryptedFiles dependency for now
+
 
   // Effect to create preview URL when a file is selected or decrypted data is available
   React.useEffect(() => {
@@ -340,13 +364,7 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
     setSelectedFile(file);
     // State resets are now handled within clearPreview
     // Preview URL creation is handled by the useEffect hook
-     if (file && mode === 'decrypt') {
-        // In decrypt mode, the selected file becomes the source immediately
-        // (no original preview needed)
-        setPreviewUrl(null); // Ensure original preview is cleared
-        // We don't set decrypted preview yet, that happens after successful decryption
-         toast({ title: "Encrypted File Selected", description: "Please enter the decryption key below.", duration: 5000 });
-    }
+    // Toast notification for decrypt mode is handled by the other useEffect
   };
 
   const handleEncrypt = async () => {
@@ -354,6 +372,7 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
       toast({ title: "No file selected", description: "Please upload an image first.", variant: "destructive" });
       return;
     }
+    const originalFilename = selectedFile.name; // Store original filename
 
     setError(null);
     setAnalysisResults(null);
@@ -383,7 +402,7 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
       // 2. Key Generation
       setStatus("generating_key");
       const key = await generateKeySM4();
-      setEncryptionKey(key); // Store the generated key
+      setEncryptionKey(key); // Store the generated key locally in state
       setProgress(40);
 
       // 3. Encryption
@@ -399,6 +418,14 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
        setAnalysisResults(analysis);
        setProgress(90);
 
+        // 5. Update user profile with the key
+       if (originalFilename && key) {
+            onUpdateEncryptedFiles(originalFilename, key); // Call parent function to save key
+       } else {
+            console.warn("Could not save encryption key: Original filename or key is missing.");
+       }
+
+
       setStatus("complete");
       setProgress(100);
       toast({
@@ -407,7 +434,7 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
           <div>
             <p>Image encrypted in {encryptionTime.toFixed(2)} ms.</p>
             <p className="text-xs mt-1">Generated Key: <code className="bg-muted px-1 py-0.5 rounded">{key}</code></p>
-             <p className="text-xs mt-1">Keep this key safe for decryption!</p>
+             <p className="text-xs mt-1">Key saved to your profile for original file '{originalFilename}'.</p>
           </div>
         ),
         duration: 9000, // Longer duration for key display
@@ -455,7 +482,32 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
           setStatus("decrypting");
           setProgress(50); // Decryption is one step
 
+          // The providedKey is crucial here. The function *relies* on it being correct.
           const { decryptedFile, decryptionTime, originalName, originalType } = await decryptImageRubik(dataToDecrypt, decryptionKeyInput);
+
+           // Check if the provided key actually matches a stored key for the *extracted* original name
+           // This adds a layer of confirmation, though decryption might have "succeeded" with a wrong key (XOR property)
+           const storedKey = encryptedFiles[originalName];
+           if (storedKey && storedKey !== decryptionKeyInput) {
+               console.warn(`Decryption possibly used wrong key. Provided: '${decryptionKeyInput}', Stored for '${originalName}': '${storedKey}'`);
+               toast({
+                   title: "Potential Key Mismatch",
+                   description: `The key you entered doesn't match the key saved for '${originalName}'. The result might be incorrect.`,
+                   variant: "destructive",
+                   duration: 10000
+                });
+               // Optionally, you could throw an error here to be stricter:
+               // throw new Error("Incorrect decryption key provided (mismatch with stored key).");
+           } else if (!storedKey) {
+                console.warn(`No stored key found for original file '${originalName}'. Cannot verify provided key.`);
+                 // Optionally notify user that key wasn't verified
+                 toast({
+                    title: "Key Not Verified",
+                    description: `No key was previously saved for '${originalName}'. Proceeding with the key you entered.`,
+                    duration: 7000
+                 });
+           }
+
 
            // Update state: order matters for useEffect dependency on decryptedData
            // Set these states AFTER successful decryption
@@ -501,14 +553,14 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
     if (mode === 'decrypt' && decryptedFileInfo?.name) {
         filename = decryptedFileInfo.name; // Use extracted name if available
     } else if (mode === 'encrypt' && selectedFile) {
-        filename = selectedFile.name;
-        // Append .encrypted suffix safely
-        const parts = filename.split('.');
+        // Construct encrypted filename based on original name + .encrypted suffix
+        const originalName = selectedFile.name;
+        const parts = originalName.split('.');
         if (parts.length > 1) {
             const ext = parts.pop();
             filename = `${parts.join('.')}.encrypted.${ext}`;
         } else {
-             filename = `${filename}.encrypted`;
+             filename = `${originalName}.encrypted`;
         }
     } else {
          // Fallback filename if original name wasn't extracted or doesn't exist
@@ -644,10 +696,9 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
            {mode === 'decrypt' && (
                 <div className="flex items-center space-x-2">
                      <FileKey className="h-5 w-5 text-muted-foreground flex-shrink-0"/>
-                     {/* Explicitly ensure Input is imported and used */}
                      <Input
                         id="decryption-key-input"
-                        type="text"
+                        type="text" // Keep as text for visibility, consider password type if needed
                         placeholder="Enter Decryption Key (e.g., sm4key-...)"
                         value={decryptionKeyInput}
                         onChange={(e) => setDecryptionKeyInput(e.target.value)}
@@ -669,12 +720,10 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
                          {processTime != null && <span className="text-xs text-muted-foreground">Encryption Time: {processTime.toFixed(2)} ms</span>}
                     </CardHeader>
                     <CardContent className="text-sm space-y-1 pt-2">
-                        {/* Changed p to div */}
                         <div className="flex items-center gap-1">
                             <span>Robustness Score:</span>
                             <Badge variant="outline" className="ml-1">{analysisResults.robustness.toFixed(1)} / 100</Badge>
                         </div>
-                         {/* Changed p to div */}
                         <div className="flex items-center gap-1">
                              <span>Resistance Level:</span>
                              <Badge
@@ -744,7 +793,7 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
 
           <div className="flex gap-2 w-full sm:w-auto flex-wrap justify-center sm:justify-start">
             {mode === 'encrypt' && encryptedData && status === 'complete' && (
-                 <Button variant="outline" onClick={() => handleDownload(encryptedData, selectedFile?.name || 'encrypted_image')} className="w-full sm:w-auto flex-1 sm:flex-none min-w-[150px]">
+                 <Button variant="outline" onClick={() => handleDownload(encryptedData, selectedFile?.name)} className="w-full sm:w-auto flex-1 sm:flex-none min-w-[150px]">
                     <Download className="mr-2 h-4 w-4" />
                     Download Encrypted
                  </Button>
@@ -760,4 +809,3 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
       </Card>
   );
 }
-
