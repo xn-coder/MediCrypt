@@ -345,6 +345,7 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
         // (no original preview needed)
         setPreviewUrl(null); // Ensure original preview is cleared
         // We don't set decrypted preview yet, that happens after successful decryption
+         toast({ title: "Encrypted File Selected", description: "Please enter the decryption key below.", duration: 5000 });
     }
   };
 
@@ -759,3 +760,4 @@ export function MediCryptApp({ onLogout, username }: MediCryptAppProps) {
       </Card>
   );
 }
+
