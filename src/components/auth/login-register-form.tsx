@@ -46,8 +46,10 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
     setIsLoading(false);
     setError(null);
     // Reset file input visually if possible (difficult to do reliably cross-browser)
-    const fileInput = document.getElementById('key-file-input-login') as HTMLInputElement; // Use specific ID
-    if (fileInput) fileInput.value = "";
+    const fileInputLogin = document.getElementById('key-file-input-login') as HTMLInputElement;
+    if (fileInputLogin) fileInputLogin.value = "";
+     const fileInputRegister = document.getElementById('key-file-input-register') as HTMLInputElement; // Assuming register has a different ID if needed
+     if (fileInputRegister) fileInputRegister.value = "";
   }
 
    const handleTabChange = (value: string) => {
@@ -98,7 +100,8 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
             reader.onload = (e) => {
                 const uploadedKeyData = e.target?.result as string;
                  // Trim both strings to handle potential whitespace differences from file saving/reading
-                if (uploadedKeyData.trim() === storedUser.keyFileData.trim()) {
+                 // Add null/undefined checks for safety
+                if (uploadedKeyData?.trim() === storedUser.keyFileData?.trim()) {
                     onLoginSuccess(email); // Changed param
                     resetForm(); // Reset after successful login confirmation
                     // No need to setIsLoading(false) here as the parent component will re-render
@@ -120,7 +123,8 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
       } else {
         // --- Mock Registration Logic ---
          const existingUser = getMockUser();
-         if (existingUser && existingUser.email.toLowerCase() === email.toLowerCase()) { // Changed from username
+         // Check if existingUser exists AND its email matches the one being registered
+         if (existingUser && existingUser.email && existingUser.email.toLowerCase() === email.toLowerCase()) { // Added check for existingUser.email
             throw new Error("Email already exists. Please choose another or log in."); // Changed message
          }
 
