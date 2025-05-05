@@ -3,7 +3,7 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { Upload, Download, Lock, Unlock, Loader2, RotateCcw, FileKey, LogOut, ShieldCheck, Copy, Check } from "lucide-react"; // Added Copy, Check
+import { Upload, Download, Lock, Unlock, Loader2, RotateCcw, FileKey, LogOut, ShieldCheck, Copy, Check, Mail } from "lucide-react"; // Added Mail
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -179,13 +179,13 @@ type Mode = "encrypt" | "decrypt";
 
 interface MediCryptAppProps {
   onLogout: () => void;
-  username: string;
+  email: string; // Changed from username
   encryptedFiles: { [originalFilename: string]: string }; // Pass existing keys
   onUpdateEncryptedFiles: (originalFilename: string, decryptionKey: string) => void; // Function to save new keys
 }
 
 
-export function MediCryptApp({ onLogout, username, encryptedFiles, onUpdateEncryptedFiles }: MediCryptAppProps) {
+export function MediCryptApp({ onLogout, email, encryptedFiles, onUpdateEncryptedFiles }: MediCryptAppProps) { // Changed username to email
   const [selectedFile, setSelectedFile] = React.useState<File | null>(null);
   const [processedFile, setProcessedFile] = React.useState<File | null>(null); // After preprocessing
   const [encryptedData, setEncryptedData] = React.useState<Blob | null>(null);
@@ -538,13 +538,8 @@ export function MediCryptApp({ onLogout, username, encryptedFiles, onUpdateEncry
     } else if (mode === 'encrypt' && selectedFile) {
         // Construct encrypted filename based on original name + .encrypted suffix
         const originalName = selectedFile.name;
-        const parts = originalName.split('.');
-        if (parts.length > 1) {
-            const ext = parts.pop();
-            filename = `${parts.join('.')}.encrypted.${ext}`;
-        } else {
-             filename = `${originalName}.encrypted`;
-        }
+        filename = constructEncryptedFilename(originalName); // Use helper function
+
     } else {
          // Fallback filename if original name wasn't extracted or doesn't exist
          filename = mode === 'encrypt' ? 'encrypted_output' : 'decrypted_output';
@@ -576,6 +571,17 @@ export function MediCryptApp({ onLogout, username, encryptedFiles, onUpdateEncry
     URL.revokeObjectURL(url);
   };
 
+  // Helper function to construct the encrypted filename
+  const constructEncryptedFilename = (originalName: string): string => {
+      const parts = originalName.split('.');
+      if (parts.length > 1) {
+          const ext = parts.pop();
+          return `${parts.join('.')}.encrypted.${ext}`;
+      } else {
+           return `${originalName}.encrypted`;
+      }
+  };
+
    const handleModeChange = (newMode: Mode) => {
         if (newMode === mode) return; // No change if already in the selected mode
         setMode(newMode);
@@ -604,6 +610,20 @@ export function MediCryptApp({ onLogout, username, encryptedFiles, onUpdateEncry
         }
     };
 
+    // Create mailto link
+    const createMailtoLink = (): string => {
+        if (!encryptedData || !encryptionKey || !selectedFile) return "#"; // Return '#' if data is missing
+
+        const subject = `MediCrypt Encrypted File: ${selectedFile.name}`;
+        const body = `Please find the encrypted file attached.\n\nThe decryption key is: ${encryptionKey}\n\nKeep this key secure.`;
+
+        // Encode subject and body for URL
+        const encodedSubject = encodeURIComponent(subject);
+        const encodedBody = encodeURIComponent(body);
+
+        return `mailto:${email}?subject=${encodedSubject}&body=${encodedBody}`;
+    };
+
   const isLoading = ["preprocessing", "generating_key", "encrypting", "decrypting", "analyzing"].includes(status);
 
   return (
@@ -623,7 +643,7 @@ export function MediCryptApp({ onLogout, username, encryptedFiles, onUpdateEncry
                     </Button>
                 </TooltipTrigger>
                  <TooltipContent>
-                    <p>Logout ({username})</p>
+                    <p>Logout ({email})</p> {/* Changed username to email */}
                 </TooltipContent>
              </Tooltip>
            </TooltipProvider>
@@ -719,7 +739,7 @@ export function MediCryptApp({ onLogout, username, encryptedFiles, onUpdateEncry
                     <CardContent className="text-sm space-y-1 pt-2">
                         <div className="flex items-center gap-1">
                             <span>Robustness Score:</span>
-                            <Badge variant="outline" className="ml-1">{analysisResults.robustness.toFixed(1)} / 100</Badge>
+                             <Badge variant="outline" className="ml-1">{analysisResults.robustness.toFixed(1)} / 100</Badge> {/* Changed div to Badge */}
                         </div>
                         <div className="flex items-center gap-1">
                              <span>Resistance Level:</span>
@@ -811,10 +831,39 @@ export function MediCryptApp({ onLogout, username, encryptedFiles, onUpdateEncry
 
           <div className="flex gap-2 w-full sm:w-auto flex-wrap justify-center sm:justify-start">
             {mode === 'encrypt' && encryptedData && status === 'complete' && (
-                 <Button variant="outline" onClick={() => handleDownload(encryptedData, selectedFile?.name)} className="w-full sm:w-auto flex-1 sm:flex-none min-w-[150px]">
+                <>
+                 <Button variant="outline" onClick={() => handleDownload(encryptedData, constructEncryptedFilename(selectedFile!.name))} className="w-full sm:w-auto flex-1 sm:flex-none min-w-[150px]">
                     <Download className="mr-2 h-4 w-4" />
                     Download Encrypted
                  </Button>
+                  <TooltipProvider>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                             {/* Use an anchor tag for the mailto link */}
+                            <a
+                                href={createMailtoLink()}
+                                target="_blank" // Open in new tab/client
+                                rel="noopener noreferrer" // Security best practice
+                                // Apply button styles to the anchor tag
+                                className={`inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2 w-full sm:w-auto flex-1 sm:flex-none min-w-[150px]`}
+                                // Prevent navigation if link construction fails
+                                onClick={(e) => {
+                                    if (createMailtoLink() === "#") {
+                                        e.preventDefault();
+                                        toast({ title: "Cannot Email", description: "Missing encrypted file or key.", variant: "destructive" });
+                                    }
+                                }}
+                            >
+                                <Mail className="mr-2 h-4 w-4" />
+                                Email File & Key
+                            </a>
+                        </TooltipTrigger>
+                         <TooltipContent>
+                            <p>Opens your default email client with the encrypted file and key (requires manual attachment).</p>
+                        </TooltipContent>
+                     </Tooltip>
+                   </TooltipProvider>
+                </>
              )}
               {mode === 'decrypt' && decryptedData && status === 'complete' && (
                  <Button variant="outline" onClick={() => handleDownload(decryptedData, decryptedFileInfo?.name)} className="w-full sm:w-auto flex-1 sm:flex-none min-w-[150px]">

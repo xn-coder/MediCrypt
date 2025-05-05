@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import { Lock, UserPlus, KeyRound, FileText, Loader2 } from "lucide-react"; // Changed User to UserPlus for Register
+import { Lock, UserPlus, KeyRound, FileText, Loader2, Mail } from "lucide-react"; // Replaced User with Mail
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -13,20 +13,20 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 // Define the type for the mock user data structure expected by this component
 interface MockUser {
-  username: string;
+  email: string; // Changed from username
   passwordHash: string; // Simulate a hashed password
   keyFileData: string; // Simulate key file content
 }
 
 interface LoginRegisterFormProps {
-  onLoginSuccess: (username: string) => void;
-  onRegisterSuccess: (username: string, keyBlob: Blob) => void;
+  onLoginSuccess: (email: string) => void; // Changed param name
+  onRegisterSuccess: (email: string, keyBlob: Blob) => void; // Changed param name
   getMockUser: () => MockUser | null; // Function to retrieve mock user data
 }
 
 export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUser }: LoginRegisterFormProps) {
   const [mode, setMode] = React.useState<"login" | "register">("login");
-  const [username, setUsername] = React.useState("");
+  const [email, setEmail] = React.useState(""); // Changed from username
   const [password, setPassword] = React.useState("");
   const [keyFile, setKeyFile] = React.useState<File | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
@@ -40,7 +40,7 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
   };
 
    const resetForm = () => {
-    setUsername("");
+    setEmail(""); // Changed from setUsername
     setPassword("");
     setKeyFile(null);
     setIsLoading(false);
@@ -61,8 +61,8 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
     setError(null);
 
     // Basic validation
-    if (!username || !password) {
-        setError("Username and password are required.");
+    if (!email || !password) { // Changed from username
+        setError("Email and password are required."); // Changed message
         setIsLoading(false);
         return;
     }
@@ -82,14 +82,14 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
         if (!storedUser) {
             throw new Error("No registered user found. Please register first.");
         }
-        if (username.toLowerCase() !== storedUser.username.toLowerCase()) {
-            throw new Error("Invalid username.");
+        if (email.toLowerCase() !== storedUser.email.toLowerCase()) { // Changed from username
+            throw new Error("Invalid email."); // Changed message
         }
         // Simulate password check (replace with actual hash comparison)
         // In a real app, the password would be sent to the server for verification.
         // Here, we just simulate checking against a locally derived "hash".
-        const simulatedCorrectPasswordHash = `hashed_${storedUser.username}_password`;
-        if (`hashed_${username}_password` !== simulatedCorrectPasswordHash) { // Check against entered username for simulation consistency
+        const simulatedCorrectPasswordHash = `hashed_${storedUser.email}_password`; // Used email
+        if (`hashed_${email}_password` !== simulatedCorrectPasswordHash) { // Check against entered email for simulation consistency
              throw new Error("Invalid password.");
         }
         // Simulate key file check
@@ -99,7 +99,7 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
                 const uploadedKeyData = e.target?.result as string;
                  // Trim both strings to handle potential whitespace differences from file saving/reading
                 if (uploadedKeyData.trim() === storedUser.keyFileData.trim()) {
-                    onLoginSuccess(username);
+                    onLoginSuccess(email); // Changed param
                     resetForm(); // Reset after successful login confirmation
                     // No need to setIsLoading(false) here as the parent component will re-render
                 } else {
@@ -120,16 +120,22 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
       } else {
         // --- Mock Registration Logic ---
          const existingUser = getMockUser();
-         if (existingUser && existingUser.username.toLowerCase() === username.toLowerCase()) {
-            throw new Error("Username already exists. Please choose another or log in.");
+         if (existingUser && existingUser.email.toLowerCase() === email.toLowerCase()) { // Changed from username
+            throw new Error("Email already exists. Please choose another or log in."); // Changed message
          }
 
-        // Generate mock key file content
-        const keyFileContent = `USER_KEY_FOR_${username.toUpperCase()}_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+        // Validate email format (basic)
+        if (!/\S+@\S+\.\S+/.test(email)) {
+            throw new Error("Please enter a valid email address.");
+        }
+
+
+        // Generate mock key file content (using email for uniqueness)
+        const keyFileContent = `USER_KEY_FOR_${email.toUpperCase()}_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
         const keyBlob = new Blob([keyFileContent], { type: "text/plain" });
 
         // Parent component handles saving user and triggering download
-        onRegisterSuccess(username, keyBlob);
+        onRegisterSuccess(email, keyBlob); // Changed param
 
         // Reset form and potentially switch to login view after parent confirms success
         // For now, just reset and stay on register tab, parent shows toast
@@ -168,18 +174,17 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
              {/* Shared Fields */}
             <div className="space-y-3 mt-4">
                <div className="relative">
-                 {/* Use User icon from lucide-react */}
-                 <UserPlus className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" /> {/* Changed icon */}
                  <Input
-                    id="username"
-                    type="text"
-                    placeholder="Username"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
+                    id="email" // Changed id
+                    type="email" // Changed type
+                    placeholder="Email" // Changed placeholder
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)} // Changed state setter
                     required
                     className="pl-10"
                     disabled={isLoading}
-                    aria-label="Username"
+                    aria-label="Email" // Changed label
                   />
                </div>
                 <div className="relative">

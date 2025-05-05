@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 // --- Mock User Data Store ---
 // In a real application, this would be replaced by a secure backend and database.
 interface MockUser {
-  username: string;
+  email: string; // Changed from username
   passwordHash: string; // Simulate a hashed password
   keyFileData: string; // Simulate key file content
   encryptedFiles?: { [originalFilename: string]: string }; // Store { originalFilename: decryptionKey }
@@ -89,7 +89,7 @@ export default function Home() {
             };
             saveMockUser(updatedUser);
             // Update currentUser state as well if the logged-in user is the one being updated
-            if (currentUser && currentUser.username === updatedUser.username) {
+            if (currentUser && currentUser.email === updatedUser.email) { // Changed from username
                  setCurrentUser(updatedUser);
             }
              toast({
@@ -107,16 +107,16 @@ export default function Home() {
     };
 
 
-  const handleLoginSuccess = (username: string) => {
+  const handleLoginSuccess = (email: string) => { // Changed from username
     const user = getMockUser(); // Use the state-backed getter
     // Basic check - in reality, server validates credentials & key
     // The login form already performed the necessary checks based on getMockUser() data
-    if (user && user.username.toLowerCase() === username.toLowerCase()) {
+    if (user && user.email.toLowerCase() === email.toLowerCase()) { // Changed from username
       setIsAuthenticated(true);
       // Ensure encryptedFiles is initialized if missing
       const loggedInUser = { ...user, encryptedFiles: user.encryptedFiles || {} };
       setCurrentUser(loggedInUser); // Set the currently logged-in user state
-      toast({ title: "Login Successful", description: `Welcome back, ${username}!` });
+      toast({ title: "Login Successful", description: `Welcome back, ${email}!` }); // Changed from username
     } else {
         // This case should ideally not happen if LoginRegisterForm logic is correct
         console.error("Login success handler called but user data mismatch.");
@@ -124,10 +124,10 @@ export default function Home() {
     }
   };
 
-  const handleRegisterSuccess = (username: string, keyBlob: Blob) => {
+  const handleRegisterSuccess = (email: string, keyBlob: Blob) => { // Changed from username
     // Simulate password hashing and prepare user data
     // In a real app, the server would handle password hashing.
-    const passwordHash = `hashed_${username}_password`; // Simple simulation
+    const passwordHash = `hashed_${email}_password`; // Simple simulation using email
     const reader = new FileReader();
 
     reader.onload = (event) => {
@@ -137,15 +137,17 @@ export default function Home() {
              return;
         }
         // Initialize encryptedFiles as an empty object for new users
-        const newUser: MockUser = { username, passwordHash, keyFileData, encryptedFiles: {} };
+        const newUser: MockUser = { email, passwordHash, keyFileData, encryptedFiles: {} }; // Changed from username
         saveMockUser(newUser); // Save the new user to state and localStorage
 
-        // Trigger key file download
+        // Trigger key file download (using email for filename prefix)
         try {
             const url = URL.createObjectURL(keyBlob);
             const a = document.createElement("a");
             a.href = url;
-            a.download = `${username}_medicrypt_key.txt`;
+            // Extract local part of email for a cleaner filename, fallback if no '@'
+            const emailPrefix = email.includes('@') ? email.split('@')[0] : email;
+            a.download = `${emailPrefix}_medicrypt_key.txt`; // Changed prefix to email
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -199,7 +201,7 @@ export default function Home() {
         // Pass encryptedFiles and the update function to MediCryptApp
         <MediCryptApp
             onLogout={handleLogout}
-            username={currentUser?.username || 'User'}
+            email={currentUser?.email || 'User'} // Changed prop name and value
             encryptedFiles={currentUser?.encryptedFiles || {}}
             onUpdateEncryptedFiles={updateUserEncryptedFiles}
         />
