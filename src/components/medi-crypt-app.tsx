@@ -3,7 +3,7 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { Upload, Download, Lock, Unlock, Loader2, RotateCcw, FileKey, LogOut, ShieldCheck } from "lucide-react";
+import { Upload, Download, Lock, Unlock, Loader2, RotateCcw, FileKey, LogOut, ShieldCheck, Copy, Check } from "lucide-react"; // Added Copy, Check
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -201,6 +201,7 @@ export function MediCryptApp({ onLogout, username, encryptedFiles, onUpdateEncry
   const [analysisResults, setAnalysisResults] = React.useState<{ robustness: number; resistance: string } | null>(null);
   const [processTime, setProcessTime] = React.useState<number | null>(null);
   const [decryptedFileInfo, setDecryptedFileInfo] = React.useState<{ name: string; type: string } | null>(null);
+  const [isKeyCopied, setIsKeyCopied] = React.useState(false); // State for copy button
 
 
   const { toast } = useToast();
@@ -210,37 +211,15 @@ export function MediCryptApp({ onLogout, username, encryptedFiles, onUpdateEncry
 
    // Effect to potentially prefill decryption key when a file is selected in decrypt mode
    React.useEffect(() => {
-        if (mode === 'decrypt' && selectedFile && encryptedFiles) {
-             // Try to find a stored key based on the *selected* filename (which is the encrypted filename)
-             // This requires a way to map the encrypted filename back to the original or storing the key with the encrypted filename itself.
-             // Let's adjust the approach: We need the ORIGINAL filename to look up the key.
-             // We can only reliably get the original filename AFTER successful decryption.
-             // SO, let's check if the ORIGINAL filename (if available from decryption) has a stored key.
-
-             // A simpler approach for now: If the *selected* file's name (which *is* the encrypted file name)
-             // somehow matches a key in the `encryptedFiles` map (less likely but possible if naming was consistent), use it.
-             // OR, if we adapt to store keys by ENCRYPTED filename (less user-friendly).
-             // Let's stick to the user entering the key or finding it after decryption.
-
-             // New approach: Check if the *currently selected file's name* has a corresponding key
-             // This assumes the `encryptedFiles` keys are the *original* filenames.
-             // This won't work directly as `selectedFile.name` is the *encrypted* name.
-
-             // Let's instead try to extract the original name from the encrypted file *preview* data
-             // if possible, or simply rely on user input.
-
-             // **Revised Strategy:**
-             // When a file is selected in decrypt mode, we will NOT try to prefill the key.
-             // The user must enter the key associated with the *original* file.
-             // The `encryptedFiles` prop can be used later, perhaps to display a list of known files/keys.
+        if (mode === 'decrypt' && selectedFile) {
              setDecryptionKeyInput(""); // Reset key input when a new file is selected for decryption
              toast({
                 title: "Encrypted File Selected",
-                description: "Please enter the corresponding decryption key below. You can find saved keys in your profile (feature to be added).",
+                description: "Please enter the corresponding decryption key below. Keys for previously encrypted files might be stored in your profile.",
                 duration: 7000
             });
         }
-   }, [selectedFile, mode]); // Removed encryptedFiles dependency for now
+   }, [selectedFile, mode, toast]); // Added toast to dependency array
 
 
   // Effect to create preview URL when a file is selected or decrypted data is available
@@ -272,6 +251,7 @@ export function MediCryptApp({ onLogout, username, encryptedFiles, onUpdateEncry
       setAnalysisResults(null);
       setProcessTime(null);
       setDecryptedFileInfo(null);
+      setIsKeyCopied(false); // Reset copy status
 
     } else if (currentDecryptedData && mode === 'decrypt') {
         // Check if decryptedData is an image type before creating URL
@@ -350,6 +330,7 @@ export function MediCryptApp({ onLogout, username, encryptedFiles, onUpdateEncry
     setAnalysisResults(null);
     setProcessTime(null);
     setDecryptedFileInfo(null);
+    setIsKeyCopied(false); // Reset copy status
 
      // Reset the file input visually
      const fileInput = document.getElementById('medical-image-upload') as HTMLInputElement;
@@ -390,6 +371,7 @@ export function MediCryptApp({ onLogout, username, encryptedFiles, onUpdateEncry
     setEncryptedData(null);
     setStatus("idle");
     setProgress(0);
+    setIsKeyCopied(false); // Reset copy status
 
     try {
       // 1. Preprocessing
@@ -432,12 +414,12 @@ export function MediCryptApp({ onLogout, username, encryptedFiles, onUpdateEncry
         title: "Encryption Successful",
         description: (
           <div>
-            <p>Image encrypted in {encryptionTime.toFixed(2)} ms.</p>
-            <p className="text-xs mt-1">Generated Key: <code className="bg-muted px-1 py-0.5 rounded">{key}</code></p>
-             <p className="text-xs mt-1">Key saved to your profile for original file '{originalFilename}'.</p>
+            <span>Image encrypted in {encryptionTime.toFixed(2)} ms.</span>
+             <span className="block text-xs mt-1">Key saved to profile for original file '{originalFilename}'.</span>
+             {/* Key display moved to Analysis Results card */}
           </div>
         ),
-        duration: 9000, // Longer duration for key display
+        duration: 7000, // Shorter duration now
       });
 
     } catch (err) {
@@ -474,6 +456,7 @@ export function MediCryptApp({ onLogout, username, encryptedFiles, onUpdateEncry
       setDecryptedFileInfo(null);
       setStatus("idle"); // Reset status before starting
       setProgress(0); // Reset progress
+      setIsKeyCopied(false); // Reset copy status
 
       // The data to decrypt is always the currently selected file in decrypt mode
       const dataToDecrypt = selectedFile;
@@ -492,7 +475,7 @@ export function MediCryptApp({ onLogout, username, encryptedFiles, onUpdateEncry
                console.warn(`Decryption possibly used wrong key. Provided: '${decryptionKeyInput}', Stored for '${originalName}': '${storedKey}'`);
                toast({
                    title: "Potential Key Mismatch",
-                   description: `The key you entered doesn't match the key saved for '${originalName}'. The result might be incorrect.`,
+                   description: `The key entered doesn't match the key saved for '${originalName}'. The result might be incorrect.`,
                    variant: "destructive",
                    duration: 10000
                 });
@@ -606,6 +589,20 @@ export function MediCryptApp({ onLogout, username, encryptedFiles, onUpdateEncry
         // Optionally reset mode, or keep current mode? Let's keep current mode.
         // setMode('encrypt');
     }
+
+    const handleCopyKey = async () => {
+        if (!encryptionKey) return;
+        try {
+            await navigator.clipboard.writeText(encryptionKey);
+            setIsKeyCopied(true);
+            toast({ title: "Key Copied", description: "Encryption key copied to clipboard." });
+            // Reset icon after a delay
+            setTimeout(() => setIsKeyCopied(false), 2000);
+        } catch (err) {
+            console.error("Failed to copy key: ", err);
+            toast({ title: "Copy Failed", description: "Could not copy key to clipboard.", variant: "destructive" });
+        }
+    };
 
   const isLoading = ["preprocessing", "generating_key", "encrypting", "decrypting", "analyzing"].includes(status);
 
@@ -733,9 +730,30 @@ export function MediCryptApp({ onLogout, username, encryptedFiles, onUpdateEncry
                                     {analysisResults.resistance}
                                 </Badge>
                         </div>
-                         {/* Display generated encryption key */}
+                         {/* Display generated encryption key with copy button */}
                          {encryptionKey && (
-                            <p className="text-xs mt-2 pt-2 border-t border-border/50">Generated Key: <code className="bg-muted px-1 py-0.5 rounded break-all">{encryptionKey}</code></p>
+                            <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border/50">
+                                <span className="text-xs">Generated Key:</span>
+                                <code className="flex-grow bg-muted px-1 py-0.5 rounded text-xs break-all">{encryptionKey}</code>
+                                <TooltipProvider>
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                             <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-6 w-6 flex-shrink-0"
+                                                onClick={handleCopyKey}
+                                                aria-label="Copy encryption key"
+                                             >
+                                                 {isKeyCopied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4 text-muted-foreground" />}
+                                            </Button>
+                                        </TooltipTrigger>
+                                         <TooltipContent>
+                                            <p>{isKeyCopied ? "Copied!" : "Copy Key"}</p>
+                                        </TooltipContent>
+                                     </Tooltip>
+                                </TooltipProvider>
+                            </div>
                          )}
                     </CardContent>
                 </Card>
