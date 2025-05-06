@@ -13,20 +13,21 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 // Define the type for the mock user data structure expected by this component
 interface MockUser {
-  email: string; // Changed from username
+  email: string;
   passwordHash: string; // Simulate a hashed password
   keyFileData: string; // Simulate key file content
+  role: 'admin' | 'user'; // Added role
 }
 
 interface LoginRegisterFormProps {
-  onLoginSuccess: (email: string) => void; // Changed param name
-  onRegisterSuccess: (email: string, keyBlob: Blob) => void; // Changed param name
+  onLoginSuccess: (email: string, role: 'admin' | 'user') => void; // Added role to callback
+  onRegisterSuccess: (email: string, keyBlob: Blob) => void;
   getMockUser: () => MockUser | null; // Function to retrieve mock user data
 }
 
 export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUser }: LoginRegisterFormProps) {
   const [mode, setMode] = React.useState<"login" | "register">("login");
-  const [email, setEmail] = React.useState(""); // Changed from username
+  const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [keyFile, setKeyFile] = React.useState<File | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
@@ -40,7 +41,7 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
   };
 
    const resetForm = () => {
-    setEmail(""); // Changed from setUsername
+    setEmail("");
     setPassword("");
     setKeyFile(null);
     setIsLoading(false);
@@ -63,8 +64,8 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
     setError(null);
 
     // Basic validation
-    if (!email || !password) { // Changed from username
-        setError("Email and password are required."); // Changed message
+    if (!email || !password) {
+        setError("Email and password are required.");
         setIsLoading(false);
         return;
     }
@@ -84,14 +85,14 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
         if (!storedUser) {
             throw new Error("No registered user found. Please register first.");
         }
-        if (email.toLowerCase() !== storedUser.email.toLowerCase()) { // Changed from username
-            throw new Error("Invalid email."); // Changed message
+        if (email.toLowerCase() !== storedUser.email.toLowerCase()) {
+            throw new Error("Invalid email.");
         }
         // Simulate password check (replace with actual hash comparison)
         // In a real app, the password would be sent to the server for verification.
         // Here, we just simulate checking against a locally derived "hash".
-        const simulatedCorrectPasswordHash = `hashed_${storedUser.email}_password`; // Used email
-        if (`hashed_${email}_password` !== simulatedCorrectPasswordHash) { // Check against entered email for simulation consistency
+        const simulatedCorrectPasswordHash = `hashed_${storedUser.email}_password`;
+        if (`hashed_${email}_password` !== simulatedCorrectPasswordHash) { 
              throw new Error("Invalid password.");
         }
         // Simulate key file check
@@ -102,7 +103,7 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
                  // Trim both strings to handle potential whitespace differences from file saving/reading
                  // Add null/undefined checks for safety
                 if (uploadedKeyData?.trim() === storedUser.keyFileData?.trim()) {
-                    onLoginSuccess(email); // Changed param
+                    onLoginSuccess(email, storedUser.role); // Pass role on login success
                     resetForm(); // Reset after successful login confirmation
                     // No need to setIsLoading(false) here as the parent component will re-render
                 } else {
@@ -124,8 +125,8 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
         // --- Mock Registration Logic ---
          const existingUser = getMockUser();
          // Check if existingUser exists AND its email matches the one being registered
-         if (existingUser && existingUser.email && existingUser.email.toLowerCase() === email.toLowerCase()) { // Added check for existingUser.email
-            throw new Error("Email already exists. Please choose another or log in."); // Changed message
+         if (existingUser && existingUser.email && existingUser.email.toLowerCase() === email.toLowerCase()) { 
+            throw new Error("Email already exists. Please choose another or log in.");
          }
 
         // Validate email format (basic)
@@ -139,7 +140,7 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
         const keyBlob = new Blob([keyFileContent], { type: "text/plain" });
 
         // Parent component handles saving user and triggering download
-        onRegisterSuccess(email, keyBlob); // Changed param
+        onRegisterSuccess(email, keyBlob); 
 
         // Reset form and potentially switch to login view after parent confirms success
         // For now, just reset and stay on register tab, parent shows toast
@@ -178,17 +179,17 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
              {/* Shared Fields */}
             <div className="space-y-3 mt-4">
                <div className="relative">
-                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" /> {/* Changed icon */}
+                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                  <Input
-                    id="email" // Changed id
-                    type="email" // Changed type
-                    placeholder="Email" // Changed placeholder
+                    id="email" 
+                    type="email" 
+                    placeholder="Email" 
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)} // Changed state setter
+                    onChange={(e) => setEmail(e.target.value)} 
                     required
                     className="pl-10"
                     disabled={isLoading}
-                    aria-label="Email" // Changed label
+                    aria-label="Email" 
                   />
                </div>
                 <div className="relative">

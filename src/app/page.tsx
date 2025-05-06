@@ -15,9 +15,11 @@ interface MockUser {
   passwordHash: string; // Simulate a hashed password
   keyFileData: string; // Simulate key file content
   encryptedFiles?: { [originalFilename: string]: string }; // Store { originalFilename: decryptionKey }
+  role: 'admin' | 'user'; // Added role field
 }
 
 const MOCK_USER_STORAGE_KEY = "mockUserData";
+const ADMIN_EMAIL_FOR_DEMO = "admin@medicrypt.com"; // Example admin email
 
 // --- Component ---
 
@@ -39,6 +41,10 @@ export default function Home() {
                 // Ensure encryptedFiles exists
                 if (!parsedUser.encryptedFiles) {
                     parsedUser.encryptedFiles = {};
+                }
+                // Ensure role exists, default to 'user' if missing for backward compatibility
+                if (!parsedUser.role) {
+                    parsedUser.role = parsedUser.email.toLowerCase() === ADMIN_EMAIL_FOR_DEMO.toLowerCase() ? 'admin' : 'user';
                 }
                 setMockUser(parsedUser);
                 // Optionally, you could auto-login here if a session token was stored
@@ -75,7 +81,7 @@ export default function Home() {
     // Function to clear the mock user (updates state and localStorage)
     const clearMockUser = () => {
         saveMockUser(null);
-    }
+    };
 
     // Function to update only the encrypted files part of the user data
     const updateUserEncryptedFiles = (originalFilename: string, decryptionKey: string) => {
@@ -107,16 +113,20 @@ export default function Home() {
     };
 
 
-  const handleLoginSuccess = (email: string) => { // Changed from username
+  const handleLoginSuccess = (email: string, role: 'admin' | 'user') => { // Added role
     const user = getMockUser(); // Use the state-backed getter
     // Basic check - in reality, server validates credentials & key
     // The login form already performed the necessary checks based on getMockUser() data
-    if (user && user.email.toLowerCase() === email.toLowerCase()) { // Changed from username
+    if (user && user.email.toLowerCase() === email.toLowerCase()) {
       setIsAuthenticated(true);
-      // Ensure encryptedFiles is initialized if missing
-      const loggedInUser = { ...user, encryptedFiles: user.encryptedFiles || {} };
+      // Ensure encryptedFiles and role are initialized/correct
+      const loggedInUser: MockUser = {
+        ...user,
+        encryptedFiles: user.encryptedFiles || {},
+        role: role, // Use role from login callback
+      };
       setCurrentUser(loggedInUser); // Set the currently logged-in user state
-      toast({ title: "Login Successful", description: `Welcome back, ${email}!` }); // Changed from username
+      toast({ title: "Login Successful", description: `Welcome back, ${email} (${role})!` });
     } else {
         // This case should ideally not happen if LoginRegisterForm logic is correct
         console.error("Login success handler called but user data mismatch.");
@@ -124,7 +134,7 @@ export default function Home() {
     }
   };
 
-  const handleRegisterSuccess = (email: string, keyBlob: Blob) => { // Changed from username
+  const handleRegisterSuccess = (email: string, keyBlob: Blob) => {
     // Simulate password hashing and prepare user data
     // In a real app, the server would handle password hashing.
     const passwordHash = `hashed_${email}_password`; // Simple simulation using email
@@ -136,8 +146,12 @@ export default function Home() {
              toast({ title: "Registration Failed", description: "Could not read generated key file.", variant: "destructive" });
              return;
         }
+        // Assign role based on email (simple mock strategy)
+        // For this demo, if email matches ADMIN_EMAIL_FOR_DEMO, assign 'admin', else 'user'
+        const role: 'admin' | 'user' = email.toLowerCase() === ADMIN_EMAIL_FOR_DEMO.toLowerCase() ? 'admin' : 'user';
+
         // Initialize encryptedFiles as an empty object for new users
-        const newUser: MockUser = { email, passwordHash, keyFileData, encryptedFiles: {} }; // Changed from username
+        const newUser: MockUser = { email, passwordHash, keyFileData, encryptedFiles: {}, role };
         saveMockUser(newUser); // Save the new user to state and localStorage
 
         // Trigger key file download (using email for filename prefix)
@@ -155,7 +169,7 @@ export default function Home() {
 
              toast({
                 title: "Registration Successful",
-                description: "Key file downloaded. Please log in with your new credentials.",
+                description: `Account created as ${role}. Key file downloaded. Please log in.`,
             });
         } catch (downloadError) {
              console.error("Failed to trigger key file download:", downloadError);
@@ -201,7 +215,8 @@ export default function Home() {
         // Pass encryptedFiles and the update function to MediCryptApp
         <MediCryptApp
             onLogout={handleLogout}
-            email={currentUser?.email || 'User'} // Changed prop name and value
+            email={currentUser?.email || 'User'}
+            role={currentUser?.role || 'user'} // Pass role
             encryptedFiles={currentUser?.encryptedFiles || {}}
             onUpdateEncryptedFiles={updateUserEncryptedFiles}
         />
