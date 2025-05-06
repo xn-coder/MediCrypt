@@ -11,15 +11,15 @@ import { useToast } from "@/hooks/use-toast";
 // --- Mock User Data Store ---
 // In a real application, this would be replaced by a secure backend and database.
 interface MockUser {
-  email: string; // Changed from username
+  email: string; 
   passwordHash: string; // Simulate a hashed password
   keyFileData: string; // Simulate key file content
   encryptedFiles?: { [originalFilename: string]: string }; // Store { originalFilename: decryptionKey }
-  role: 'admin' | 'user'; // Added role field
+  role: 'admin' | 'user'; 
 }
 
 const MOCK_USER_STORAGE_KEY = "mockUserData";
-const ADMIN_EMAIL_FOR_DEMO = "admin@medicrypt.com"; // Example admin email
+const ADMIN_DOMAIN_FOR_DEMO = "medicrypt.com"; // Admin domain
 
 // --- Component ---
 
@@ -43,8 +43,9 @@ export default function Home() {
                     parsedUser.encryptedFiles = {};
                 }
                 // Ensure role exists, default to 'user' if missing for backward compatibility
+                // Update role assignment based on domain
                 if (!parsedUser.role) {
-                    parsedUser.role = parsedUser.email.toLowerCase() === ADMIN_EMAIL_FOR_DEMO.toLowerCase() ? 'admin' : 'user';
+                    parsedUser.role = parsedUser.email.toLowerCase().endsWith(`@${ADMIN_DOMAIN_FOR_DEMO.toLowerCase()}`) ? 'admin' : 'user';
                 }
                 setMockUser(parsedUser);
                 // Optionally, you could auto-login here if a session token was stored
@@ -89,13 +90,13 @@ export default function Home() {
             const updatedUser: MockUser = {
                 ...mockUser,
                 encryptedFiles: {
-                    ...mockUser.encryptedFiles,
+                    ...(mockUser.encryptedFiles || {}), // Ensure encryptedFiles is an object
                     [originalFilename]: decryptionKey,
                 },
             };
             saveMockUser(updatedUser);
             // Update currentUser state as well if the logged-in user is the one being updated
-            if (currentUser && currentUser.email === updatedUser.email) { // Changed from username
+            if (currentUser && currentUser.email === updatedUser.email) { 
                  setCurrentUser(updatedUser);
             }
              toast({
@@ -113,7 +114,7 @@ export default function Home() {
     };
 
 
-  const handleLoginSuccess = (email: string, role: 'admin' | 'user') => { // Added role
+  const handleLoginSuccess = (email: string, role: 'admin' | 'user') => { 
     const user = getMockUser(); // Use the state-backed getter
     // Basic check - in reality, server validates credentials & key
     // The login form already performed the necessary checks based on getMockUser() data
@@ -146,9 +147,8 @@ export default function Home() {
              toast({ title: "Registration Failed", description: "Could not read generated key file.", variant: "destructive" });
              return;
         }
-        // Assign role based on email (simple mock strategy)
-        // For this demo, if email matches ADMIN_EMAIL_FOR_DEMO, assign 'admin', else 'user'
-        const role: 'admin' | 'user' = email.toLowerCase() === ADMIN_EMAIL_FOR_DEMO.toLowerCase() ? 'admin' : 'user';
+        // Assign role based on email domain
+        const role: 'admin' | 'user' = email.toLowerCase().endsWith(`@${ADMIN_DOMAIN_FOR_DEMO.toLowerCase()}`) ? 'admin' : 'user';
 
         // Initialize encryptedFiles as an empty object for new users
         const newUser: MockUser = { email, passwordHash, keyFileData, encryptedFiles: {}, role };
@@ -161,7 +161,7 @@ export default function Home() {
             a.href = url;
             // Extract local part of email for a cleaner filename, fallback if no '@'
             const emailPrefix = email.includes('@') ? email.split('@')[0] : email;
-            a.download = `${emailPrefix}_medicrypt_key.txt`; // Changed prefix to email
+            a.download = `${emailPrefix}_medicrypt_key.txt`; 
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
