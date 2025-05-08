@@ -15,10 +15,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Users } from 'lucide-react';
 
 interface AdminDashboardProps {
-  users: MockUser[];
+  users: MockUser[]; // This list should already be filtered to exclude admins by the parent
 }
 
 export function AdminDashboard({ users }: AdminDashboardProps) {
+  // The users prop is now expected to be pre-filtered by the parent component (page.tsx)
+  // to exclude the admin user. If further filtering is needed (e.g. to ensure only 'user' role), it can be done here.
+  // For now, we assume 'users' contains only non-admin users.
+  const displayUsers = users.filter(user => user.role !== 'admin');
+
   return (
     <Card className="my-6 border-accent shadow-md">
       <CardHeader>
@@ -26,12 +31,12 @@ export function AdminDashboard({ users }: AdminDashboardProps) {
           <Users className="h-6 w-6 text-accent" />
           Admin Dashboard - Registered Users
         </CardTitle>
-        <CardDescription>List of all users registered in the system.</CardDescription>
+        <CardDescription>List of all non-admin users registered in the system.</CardDescription>
       </CardHeader>
       <CardContent>
-        {users && users.length > 0 ? (
+        {displayUsers && displayUsers.length > 0 ? (
           <Table>
-            <TableCaption>A list of registered users. ({users.length} total)</TableCaption>
+            <TableCaption>A list of registered non-admin users. ({displayUsers.length} total)</TableCaption>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[100px]">#</TableHead>
@@ -41,7 +46,7 @@ export function AdminDashboard({ users }: AdminDashboardProps) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {users.map((user, index) => (
+              {displayUsers.map((user, index) => (
                 <TableRow key={user.email}>
                   <TableCell className="font-medium">{index + 1}</TableCell>
                   <TableCell>{user.email}</TableCell>
@@ -54,7 +59,7 @@ export function AdminDashboard({ users }: AdminDashboardProps) {
             </TableBody>
           </Table>
         ) : (
-          <p className="text-center text-muted-foreground">No users registered yet.</p>
+          <p className="text-center text-muted-foreground">No non-admin users registered yet.</p>
         )}
       </CardContent>
     </Card>

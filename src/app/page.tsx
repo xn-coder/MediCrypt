@@ -7,8 +7,8 @@ import { MediCryptApp } from "@/components/medi-crypt-app";
 import { useToast } from "@/hooks/use-toast";
 import type { MockUser } from "@/types/user"; // Import MockUser type
 
-const MOCK_USER_STORAGE_KEY = "mockUserData_v2"; // Changed key to avoid conflict during transition and signify new structure
-const ADMIN_DOMAIN_FOR_DEMO = "medicrypt.com";
+const MOCK_USER_STORAGE_KEY = "mockUserData_v2"; 
+// const ADMIN_DOMAIN_FOR_DEMO = "medicrypt.com"; // Removed: Admin role no longer tied to email domain
 
 export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = React.useState(false);
@@ -27,12 +27,12 @@ export default function Home() {
 
           if (Array.isArray(parsedData)) {
             // New format (array of users)
-            usersToStore = parsedData.map((user: any) => ({ // Add 'any' for type safety during migration
+            usersToStore = parsedData.map((user: any) => ({ 
               email: user.email,
               passwordHash: user.passwordHash,
               keyFileData: user.keyFileData,
               encryptedFiles: user.encryptedFiles || {},
-              role: user.role || (user.email?.toLowerCase().endsWith(`@${ADMIN_DOMAIN_FOR_DEMO.toLowerCase()}`) ? 'admin' : 'user'),
+              role: user.role || 'user', // Default to 'user' if role is missing
             }));
           } else if (typeof parsedData === 'object' && parsedData !== null && parsedData.email) {
             // Attempt to migrate old format (single user object)
@@ -42,7 +42,7 @@ export default function Home() {
               passwordHash: parsedData.passwordHash,
               keyFileData: parsedData.keyFileData,
               encryptedFiles: parsedData.encryptedFiles || {},
-              role: parsedData.role || (parsedData.email?.toLowerCase().endsWith(`@${ADMIN_DOMAIN_FOR_DEMO.toLowerCase()}`) ? 'admin' : 'user'),
+              role: parsedData.role || 'user', // Default to 'user' if role is missing
             }];
           } else {
             // Invalid data format
@@ -115,7 +115,6 @@ export default function Home() {
 
   const handleLoginSuccess = (loggedInUser: MockUser) => {
     setIsAuthenticated(true);
-    // Ensure encryptedFiles is initialized (should be by now, but good practice)
     const userWithInitializedFiles: MockUser = {
         ...loggedInUser,
         encryptedFiles: loggedInUser.encryptedFiles || {}
@@ -134,7 +133,8 @@ export default function Home() {
         toast({ title: "Registration Failed", description: "Could not read generated key file.", variant: "destructive" });
         return;
       }
-      const role: 'admin' | 'user' = email.toLowerCase().endsWith(`@${ADMIN_DOMAIN_FOR_DEMO.toLowerCase()}`) ? 'admin' : 'user';
+      // All new registrations through this form are 'user' role
+      const role: 'user' = 'user'; 
       const newUser: MockUser = { email, passwordHash, keyFileData, encryptedFiles: {}, role };
 
       try {
@@ -148,7 +148,6 @@ export default function Home() {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
 
-        // Save user only after successful download
         const currentUsers = getMockUsers();
         const updatedUsers = [...currentUsers, newUser];
         saveMockUsers(updatedUsers);
@@ -160,7 +159,6 @@ export default function Home() {
       } catch (downloadError) {
         console.error("Failed to trigger key file download:", downloadError);
         toast({ title: "Registration Warning", description: "Account not created. Key file download failed. Please try registering again.", variant: "destructive" });
-        // User is not saved if download fails, so no explicit rollback of data needed
       }
     };
     reader.onerror = () => {
@@ -196,7 +194,8 @@ export default function Home() {
           onLogout={handleLogout}
           currentUser={currentUser}
           onUpdateEncryptedFiles={updateUserEncryptedFiles}
-          allUsers={currentUser.role === 'admin' ? mockUsersData : undefined}
+          // Pass all users if current user is admin, excluding the admin themselves from the list.
+          allUsers={currentUser.role === 'admin' ? mockUsersData.filter(u => u.email.toLowerCase() !== currentUser.email.toLowerCase()) : undefined}
         />
       )}
     </main>
