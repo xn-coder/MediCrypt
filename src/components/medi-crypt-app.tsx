@@ -4,7 +4,7 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { Upload, Download, Lock, Unlock, Loader2, RotateCcw, FileKey, LogOut, ShieldCheck, Copy, Check, Mail, AlertCircle, Send, UserCog, Settings } from "lucide-react"; // Added UserCog, Settings
+import { Upload, Download, Lock, Unlock, Loader2, RotateCcw, FileKey, LogOut, ShieldCheck, Copy, Check, Mail, AlertCircle, Send, UserCog, Settings, Users } from "lucide-react";
 import emailjs from 'emailjs-com'; 
 
 import { Button } from "@/components/ui/button";
@@ -16,9 +16,10 @@ import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Label } from "@/components/ui/label"; // Added Label
-import { Slider } from "@/components/ui/slider"; // Added Slider
-
+import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
+import type { MockUser } from "@/types/user"; // Import MockUser type
+import { AdminDashboard } from "@/components/admin/admin-dashboard"; // Import AdminDashboard
 
 // --- EmailJS Configuration Check ---
 const EMAILJS_SERVICE_ID = process.env.NEXT_PUBLIC_EMAILJS_SERVICE_ID;
@@ -32,8 +33,6 @@ const isEmailJsConfigured = EMAILJS_SERVICE_ID && EMAILJS_TEMPLATE_ID && EMAILJS
 
 
 // --- Mock/Placeholder Functions ---
-
-// Simulate preprocessing
 const preprocessImage = async (file: File): Promise<File> => {
   console.log("Preprocessing image:", file.name);
   await new Promise(resolve => setTimeout(resolve, 500)); 
@@ -41,7 +40,6 @@ const preprocessImage = async (file: File): Promise<File> => {
   return file; 
 };
 
-// Simulate Rubik's Cube Scrambling Encryption
 const encryptImageRubik = async (file: File, key: string, rotationLayers: number): Promise<{ encryptedFile: Blob, encryptionTime: number }> => {
   console.log("Encrypting image with Rubik's algorithm:", file.name, "using key:", key, "with layers:", rotationLayers);
   const startTime = performance.now();
@@ -49,12 +47,12 @@ const encryptImageRubik = async (file: File, key: string, rotationLayers: number
 
   const arrayBuffer = await file.arrayBuffer();
   const dataView = new DataView(arrayBuffer);
-  // Simple "encryption": XOR with key characters (very insecure, just for demo)
-  // The rotationLayers parameter can be used here to influence the "scrambling"
   for (let i = 0; i < dataView.byteLength; i++) {
     dataView.setUint8(i, dataView.getUint8(i) ^ key.charCodeAt(i % key.length) ^ (rotationLayers % 256));
   }
-  const metadataPrefix = `encrypted-${file.name}-type:${file.type}-`;
+  // Store original filename and type in metadata
+  // Format: encrypted-<originalName>-type:<originalType>-key:<encryptionKey>-<actualData>
+  const metadataPrefix = `encrypted-${file.name}-type:${file.type}-key:${key}-`;
   const metadataBuffer = new TextEncoder().encode(metadataPrefix);
 
   const finalBuffer = new Uint8Array(metadataBuffer.byteLength + arrayBuffer.byteLength);
@@ -68,7 +66,6 @@ const encryptImageRubik = async (file: File, key: string, rotationLayers: number
   return { encryptedFile: encryptedBlob, encryptionTime: endTime - startTime };
 };
 
-// Simulate Key Generation (SM4 - placeholder)
 const generateKeySM4 = async (): Promise<string> => {
   console.log("Generating SM4-like key...");
   await new Promise(resolve => setTimeout(resolve, 300)); 
@@ -77,7 +74,6 @@ const generateKeySM4 = async (): Promise<string> => {
   return key;
 };
 
-// Simulate Decryption
 const decryptImageRubik = async (encryptedFile: Blob, providedKey: string, rotationLayers: number): Promise<{ decryptedFile: Blob, decryptionTime: number, originalName: string, originalType: string }> => {
     console.log("Decrypting image with key:", providedKey, "and layers:", rotationLayers);
     const startTime = performance.now();
@@ -88,13 +84,13 @@ const decryptImageRubik = async (encryptedFile: Blob, providedKey: string, rotat
 
     const encryptedMarker = `encrypted-`;
     const typeMarker = `-type:`;
-    const endMetadataMarker = '-'; 
+    const keyMarker = `-key:`; // Expect key in metadata for self-contained decryption demo
+    const endMetadataMarker = '-'; // Marks end of a metadata segment
 
-    const metadataSearchLimit = Math.min(2048, buffer.byteLength); 
+    const metadataSearchLimit = Math.min(4096, buffer.byteLength); // Increased search limit
     let headerText = '';
     try {
          headerText = textDecoder.decode(new Uint8Array(buffer.slice(0, metadataSearchLimit)));
-         console.log("Decryption: Read initial content:", headerText.substring(0, 200) + "..."); 
     } catch (e) {
         console.error("Could not decode the beginning of the file as text for metadata extraction.", e);
          throw new Error("Invalid encrypted file format or corrupted data.");
@@ -103,42 +99,47 @@ const decryptImageRubik = async (encryptedFile: Blob, providedKey: string, rotat
     if (!headerText.startsWith(encryptedMarker)) {
         throw new Error(`Invalid encrypted file format: Missing '${encryptedMarker}' prefix. Ensure you are uploading a file encrypted by this application.`);
     }
-
-    const typeStartIndex = headerText.indexOf(typeMarker);
-    if (typeStartIndex === -1) {
-         throw new Error(`Invalid encrypted file: Missing '${typeMarker}' marker within the first ${metadataSearchLimit} bytes.`);
+    
+    // Extract original name
+    const nameEndIndex = headerText.indexOf(typeMarker, encryptedMarker.length);
+    if (nameEndIndex === -1) {
+        throw new Error(`Invalid encrypted file: Missing '${typeMarker}' after filename.`);
     }
-
-    const originalName = headerText.substring(encryptedMarker.length, typeStartIndex);
-    console.log(`Extracted originalName: '${originalName}'`);
+    const originalName = headerText.substring(encryptedMarker.length, nameEndIndex);
     if (!originalName) {
-         throw new Error("Invalid encrypted file: Could not extract original filename from metadata.");
+        throw new Error("Invalid encrypted file: Could not extract original filename from metadata.");
     }
 
-    const typeValueStartIndex = typeStartIndex + typeMarker.length;
-    const typeEndIndex = headerText.indexOf(endMetadataMarker, typeValueStartIndex); 
+    // Extract original type
+    const typeValueStartIndex = nameEndIndex + typeMarker.length;
+    const typeEndIndex = headerText.indexOf(keyMarker, typeValueStartIndex); // Key marker now follows type
     if (typeEndIndex === -1) {
-        throw new Error(`Invalid encrypted file: Missing final '${endMetadataMarker}' marker after type information within the first ${metadataSearchLimit} bytes.`);
+        throw new Error(`Invalid encrypted file: Missing '${keyMarker}' after type information.`);
     }
-
     const originalType = headerText.substring(typeValueStartIndex, typeEndIndex);
-    console.log(`Extracted originalType: '${originalType}'`);
-     if (!originalType) {
-          console.warn("Potential issue: Extracted original file type is empty.");
+    
+    // Extract embedded key (for this demo's self-contained decryption)
+    const keyValueStartIndex = typeEndIndex + keyMarker.length;
+    const keyEndIndex = headerText.indexOf(endMetadataMarker, keyValueStartIndex); // End of key segment
+    if (keyEndIndex === -1) {
+        throw new Error("Invalid encrypted file: Could not find end marker for embedded key.");
+    }
+    const embeddedKey = headerText.substring(keyValueStartIndex, keyEndIndex);
+
+    // Validate provided key against embedded key
+    if (providedKey.trim() !== embeddedKey.trim()) {
+        console.error("Key mismatch. Provided:", providedKey, "Embedded:", embeddedKey);
+        throw new Error("Incorrect decryption key provided. The key does not match the one embedded in the file.");
     }
 
-    const fullMetadataPrefix = `${encryptedMarker}${originalName}${typeMarker}${originalType}${endMetadataMarker}`;
-    const metadataBuffer = new TextEncoder().encode(fullMetadataPrefix);
-    const metadataLength = metadataBuffer.byteLength;
-    console.log(`Calculated metadataLength: ${metadataLength} bytes`);
+    const fullMetadataPrefix = `${encryptedMarker}${originalName}${typeMarker}${originalType}${keyMarker}${embeddedKey}${endMetadataMarker}`;
+    const metadataLength = new TextEncoder().encode(fullMetadataPrefix).byteLength;
 
     if (buffer.byteLength < metadataLength) {
          throw new Error("Invalid encrypted file: Data is shorter than the calculated metadata length.");
     }
 
     const encryptedDataBuffer = buffer.slice(metadataLength);
-    console.log(`Encrypted data size: ${encryptedDataBuffer.byteLength} bytes`);
-
     const decryptedDataView = new DataView(encryptedDataBuffer);
     for (let i = 0; i < decryptedDataView.byteLength; i++) {
         decryptedDataView.setUint8(i, decryptedDataView.getUint8(i) ^ providedKey.charCodeAt(i % providedKey.length) ^ (rotationLayers % 256));
@@ -151,8 +152,6 @@ const decryptImageRubik = async (encryptedFile: Blob, providedKey: string, rotat
     return { decryptedFile: decryptedBlob, decryptionTime: endTime - startTime, originalName, originalType };
 };
 
-
-// Simulate Performance/Security Analysis
 const analyzeSecurity = async (): Promise<{ robustness: number, resistance: string }> => {
     console.log("Analyzing security...");
     await new Promise(resolve => setTimeout(resolve, 800)); 
@@ -162,22 +161,17 @@ const analyzeSecurity = async (): Promise<{ robustness: number, resistance: stri
     return { robustness, resistance };
 };
 
-
-// --- Component ---
-
 type ProcessStatus = "idle" | "preprocessing" | "generating_key" | "encrypting" | "decrypting" | "analyzing" | "sending_email" | "complete" | "error"; 
 type Mode = "encrypt" | "decrypt";
 
 interface MediCryptAppProps {
   onLogout: () => void;
-  email: string; 
-  role: 'admin' | 'user'; // Added role prop
-  encryptedFiles: { [originalFilename: string]: string }; 
-  onUpdateEncryptedFiles: (originalFilename: string, decryptionKey: string) => void; 
+  currentUser: MockUser; // Use the full currentUser object
+  onUpdateEncryptedFiles: (originalFilename: string, decryptionKey: string) => void;
+  allUsers?: MockUser[]; // Optional: for admin dashboard
 }
 
-
-export function MediCryptApp({ onLogout, email, role, encryptedFiles, onUpdateEncryptedFiles }: MediCryptAppProps) { 
+export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, allUsers }: MediCryptAppProps) { 
   const [selectedFile, setSelectedFile] = React.useState<File | null>(null);
   const [processedFile, setProcessedFile] = React.useState<File | null>(null); 
   const [encryptedData, setEncryptedData] = React.useState<Blob | null>(null);
@@ -195,24 +189,23 @@ export function MediCryptApp({ onLogout, email, role, encryptedFiles, onUpdateEn
   const [decryptedFileInfo, setDecryptedFileInfo] = React.useState<{ name: string; type: string } | null>(null);
   const [isKeyCopied, setIsKeyCopied] = React.useState(false); 
   const [emailSent, setEmailSent] = React.useState(false); 
-  const [rotationLayers, setRotationLayers] = React.useState<number>(3); // Admin configurable
-
+  const [rotationLayers, setRotationLayers] = React.useState<number>(3);
 
   const { toast } = useToast();
-
   const decryptedPreviewUrlRef = React.useRef<string | null>(null);
+
+  const { email, role, encryptedFiles } = currentUser; // Destructure from currentUser
 
    React.useEffect(() => {
         if (mode === 'decrypt' && selectedFile) {
              setDecryptionKeyInput(""); 
              toast({
                 title: "Encrypted File Selected",
-                description: "Please enter the corresponding decryption key below. Keys for previously encrypted files might be stored in your profile.",
+                description: "Please enter the corresponding decryption key below. Keys for previously encrypted files might be stored in your profile if you encrypted them.",
                 duration: 7000
             });
         }
    }, [selectedFile, mode, toast]); 
-
 
   React.useEffect(() => {
     let objectUrl: string | null = null;
@@ -222,131 +215,95 @@ export function MediCryptApp({ onLogout, email, role, encryptedFiles, onUpdateEn
     if (currentSelectedFile && mode === 'encrypt') {
       objectUrl = URL.createObjectURL(currentSelectedFile);
       setPreviewUrl(objectUrl);
-
       if (decryptedPreviewUrlRef.current) {
         URL.revokeObjectURL(decryptedPreviewUrlRef.current);
         decryptedPreviewUrlRef.current = null;
         setDecryptedPreviewUrl(null); 
       }
-
-      setProcessedFile(null);
-      setEncryptedData(null);
-      setDecryptedData(null);
-      setEncryptionKey(null);
-      setError(null);
-      setStatus("idle");
-      setProgress(0);
-      setAnalysisResults(null);
-      setProcessTime(null);
-      setDecryptedFileInfo(null);
-      setIsKeyCopied(false); 
-      setEmailSent(false); 
-
+      resetEncryptState();
     } else if (currentDecryptedData && mode === 'decrypt') {
         if (currentDecryptedData.type.startsWith('image/')) {
             objectUrl = URL.createObjectURL(currentDecryptedData);
-            if (decryptedPreviewUrlRef.current) {
-                URL.revokeObjectURL(decryptedPreviewUrlRef.current);
-            }
+            if (decryptedPreviewUrlRef.current) URL.revokeObjectURL(decryptedPreviewUrlRef.current);
             decryptedPreviewUrlRef.current = objectUrl; 
             setDecryptedPreviewUrl(objectUrl); 
         } else {
-            if (decryptedPreviewUrlRef.current) {
-                 URL.revokeObjectURL(decryptedPreviewUrlRef.current);
-                 decryptedPreviewUrlRef.current = null;
-            }
+            if (decryptedPreviewUrlRef.current) URL.revokeObjectURL(decryptedPreviewUrlRef.current);
+            decryptedPreviewUrlRef.current = null;
             setDecryptedPreviewUrl(null); 
-            console.warn("Decrypted data is not an image, cannot create preview.");
         }
         if (previewUrl) {
             URL.revokeObjectURL(previewUrl);
             setPreviewUrl(null);
         }
-
     } else {
-       if (previewUrl) {
-            URL.revokeObjectURL(previewUrl);
-            setPreviewUrl(null);
-       }
-        if (decryptedPreviewUrlRef.current) {
-            URL.revokeObjectURL(decryptedPreviewUrlRef.current);
-            decryptedPreviewUrlRef.current = null;
-            setDecryptedPreviewUrl(null);
-       }
+       if (previewUrl) URL.revokeObjectURL(previewUrl);
+       setPreviewUrl(null);
+       if (decryptedPreviewUrlRef.current) URL.revokeObjectURL(decryptedPreviewUrlRef.current);
+       decryptedPreviewUrlRef.current = null;
+       setDecryptedPreviewUrl(null);
     }
 
-
     return () => {
-        if (objectUrl && currentSelectedFile) {
-            URL.revokeObjectURL(objectUrl);
-        }
+        if (objectUrl && currentSelectedFile) URL.revokeObjectURL(objectUrl);
     };
   }, [selectedFile, decryptedData, mode]);
 
-
-  const clearPreview = () => {
-    if (previewUrl) {
-        URL.revokeObjectURL(previewUrl);
-    }
-    if (decryptedPreviewUrlRef.current) { 
-        URL.revokeObjectURL(decryptedPreviewUrlRef.current);
-        decryptedPreviewUrlRef.current = null;
-    }
-
-    setPreviewUrl(null);
-    setDecryptedPreviewUrl(null); 
-    setSelectedFile(null);
+  const resetEncryptState = () => {
     setProcessedFile(null);
     setEncryptedData(null);
     setDecryptedData(null);
     setEncryptionKey(null);
-    setDecryptionKeyInput(""); 
+    setError(null);
     setStatus("idle");
     setProgress(0);
-    setError(null);
     setAnalysisResults(null);
     setProcessTime(null);
     setDecryptedFileInfo(null);
-    setIsKeyCopied(false); 
-    setEmailSent(false); 
+    setIsKeyCopied(false);
+    setEmailSent(false);
+  };
+
+  const clearPreview = () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    if (decryptedPreviewUrlRef.current) URL.revokeObjectURL(decryptedPreviewUrlRef.current);
+    decryptedPreviewUrlRef.current = null;
+
+    setPreviewUrl(null);
+    setDecryptedPreviewUrl(null); 
+    setSelectedFile(null);
+    setDecryptionKeyInput(""); 
+    resetEncryptState(); // Also reset encryption-specific state
 
      const fileInput = document.getElementById('medical-image-upload') as HTMLInputElement;
      if (fileInput) fileInput.value = "";
   };
 
-
   const handleFileChange = (file: File | null) => {
      clearPreview();
-
-    setSelectedFile(file);
+     setSelectedFile(file);
+     if (mode === 'decrypt' && file) { // Additional notification for decrypt mode
+         toast({
+            title: "File Ready for Decryption",
+            description: `Selected '${file.name}'. Please enter the key and click 'Decrypt'.`,
+         });
+     }
   };
 
-    const sendEncryptionKeyEmail = async (toEmail: string, fileName: string, key: string): Promise<boolean> => {
-         if (!isEmailJsConfigured) {
-             console.error("EmailJS is not configured. Cannot send email. Please set environment variables.");
-             toast({
-                 title: "Email Sending Disabled",
-                 description: "EmailJS credentials not found. Key could not be sent.",
-                 variant: "destructive",
-             });
-             return false;
-         }
-
-        if (!EMAILJS_TEMPLATE_ID) {
-            console.error("EmailJS Template ID is missing.");
-            toast({ title: "Email Error", description: "Email template configuration is missing.", variant: "destructive" });
-            return false;
-        }
-
-        if (!EMAILJS_SERVICE_ID) {
-            console.error("EmailJS Service ID is missing.");
-            toast({ title: "Email Error", description: "Email service configuration is missing.", variant: "destructive" });
-            return false;
-        }
-
-        if (!EMAILJS_PUBLIC_KEY) {
-            console.error("EmailJS Public Key is missing.");
-            toast({ title: "Email Error", description: "Email public key configuration is missing.", variant: "destructive" });
+  const sendEncryptionKeyEmail = async (toEmail: string, fileName: string, key: string): Promise<boolean> => {
+     if (!isEmailJsConfigured) {
+         console.error("EmailJS is not configured. Cannot send email.");
+         toast({
+             title: "Email Sending Disabled",
+             description: "EmailJS credentials not found. Key could not be sent.",
+             variant: "destructive",
+         });
+         return false;
+     }
+    // ... (rest of sendEncryptionKeyEmail function remains the same)
+        if (!EMAILJS_TEMPLATE_ID || !EMAILJS_SERVICE_ID || !EMAILJS_PUBLIC_KEY) {
+            console.error("EmailJS configuration is incomplete.");
+            toast({ title: "Email Error", description: "Email service configuration is incomplete.", variant: "destructive" });
             return false;
         }
 
@@ -377,8 +334,7 @@ export function MediCryptApp({ onLogout, email, role, encryptedFiles, onUpdateEn
             setError(`Failed to send email: ${errorMessage}`); 
             return false; 
         } 
-    };
-
+  };
 
   const handleEncrypt = async () => {
     if (!selectedFile) {
@@ -386,24 +342,7 @@ export function MediCryptApp({ onLogout, email, role, encryptedFiles, onUpdateEn
       return;
     }
     const originalFilename = selectedFile.name; 
-
-    setError(null);
-    setAnalysisResults(null);
-    setProcessTime(null);
-    setDecryptedData(null); 
-     if (decryptedPreviewUrlRef.current) {
-        URL.revokeObjectURL(decryptedPreviewUrlRef.current);
-        decryptedPreviewUrlRef.current = null;
-        setDecryptedPreviewUrl(null);
-    }
-    setDecryptedFileInfo(null);
-    setEncryptionKey(null); 
-    setProcessedFile(null);
-    setEncryptedData(null);
-    setStatus("idle");
-    setProgress(0);
-    setIsKeyCopied(false); 
-    setEmailSent(false); 
+    resetEncryptState(); // Clear previous encryption results
 
     try {
       setStatus("preprocessing");
@@ -452,7 +391,7 @@ export function MediCryptApp({ onLogout, email, role, encryptedFiles, onUpdateEn
                 description: (
                 <div>
                     <span>Image encrypted in {encryptionTime.toFixed(2)} ms.</span>
-                    <span className="block text-xs mt-1">Key saved to profile for original file '{originalFilename}'.</span>
+                    <span className="block text-xs mt-1">Key for '{originalFilename}' saved. You can copy it below.</span>
                     {isEmailJsConfigured && emailSuccess && <span className="block text-xs mt-1 text-green-600">Decryption key sent to your email.</span>}
                     {isEmailJsConfigured && !emailSuccess && <span className="block text-xs mt-1 text-destructive">Failed to send decryption key via email.</span>}
                     {!isEmailJsConfigured && <span className="block text-xs mt-1 text-yellow-600">Email notifications are disabled.</span>}
@@ -461,8 +400,6 @@ export function MediCryptApp({ onLogout, email, role, encryptedFiles, onUpdateEn
                 duration: 10000, 
              });
         }
-
-
     } catch (err) {
       console.error("Encryption error:", err);
       const errorMessage = err instanceof Error ? err.message : "An unknown error occurred during encryption.";
@@ -482,44 +419,39 @@ export function MediCryptApp({ onLogout, email, role, encryptedFiles, onUpdateEn
           toast({ title: "No decryption key", description: "Please enter the decryption key.", variant: "destructive" });
           return;
       }
-
       setError(null);
       setAnalysisResults(null); 
       setProcessTime(null);
       setDecryptedData(null); 
-       if (decryptedPreviewUrlRef.current) {
-            URL.revokeObjectURL(decryptedPreviewUrlRef.current);
-            decryptedPreviewUrlRef.current = null;
-            setDecryptedPreviewUrl(null); 
-       }
+      if (decryptedPreviewUrlRef.current) URL.revokeObjectURL(decryptedPreviewUrlRef.current);
+      decryptedPreviewUrlRef.current = null;
+      setDecryptedPreviewUrl(null); 
       setDecryptedFileInfo(null);
       setStatus("idle"); 
       setProgress(0); 
       setIsKeyCopied(false); 
       setEmailSent(false); 
 
-      const dataToDecrypt = selectedFile;
-
       try {
           setStatus("decrypting");
           setProgress(50); 
+          const { decryptedFile, decryptionTime, originalName, originalType } = await decryptImageRubik(selectedFile, decryptionKeyInput, rotationLayers);
 
-          const { decryptedFile, decryptionTime, originalName, originalType } = await decryptImageRubik(dataToDecrypt, decryptionKeyInput, rotationLayers); // Pass rotationLayers
-
-           const storedKey = encryptedFiles[originalName];
-           if (storedKey && storedKey !== decryptionKeyInput) {
-               console.warn(`Decryption possibly used wrong key. Provided: '${decryptionKeyInput}', Stored for '${originalName}': '${storedKey}'`);
+           // Check against stored keys (if the current user encrypted this file)
+           const userStoredKey = encryptedFiles[originalName];
+           if (userStoredKey && userStoredKey.trim() !== decryptionKeyInput.trim()) {
+               console.warn(`Decryption key mismatch. Provided: '${decryptionKeyInput}', User's Stored for '${originalName}': '${userStoredKey}'`);
                toast({
-                   title: "Potential Key Mismatch",
-                   description: `The key entered doesn't match the key saved for '${originalName}'. The result might be incorrect.`,
+                   title: "Key Mismatch Warning",
+                   description: `The key entered doesn't match the key saved in your profile for '${originalName}'. The decryption might be incorrect if this file was encrypted by you with a different key.`,
                    variant: "destructive",
                    duration: 10000
                 });
-           } else if (!storedKey) {
-                console.warn(`No stored key found for original file '${originalName}'. Cannot verify provided key.`);
+           } else if (!userStoredKey && selectedFile.name.includes(originalName)) { // Check if the file name seems to match one for which a key could exist
+                console.warn(`No key found in your profile for a file matching '${originalName}'. Verifying against embedded key.`);
                  toast({
-                    title: "Key Not Verified",
-                    description: `No key was previously saved for '${originalName}'. Proceeding with the key you entered.`,
+                    title: "Key Not in Profile",
+                    description: `No key for '${originalName}' found in your profile. Decryption will proceed based on the key you entered and the key embedded in the file.`,
                     duration: 7000
                  });
            }
@@ -533,10 +465,8 @@ export function MediCryptApp({ onLogout, email, role, encryptedFiles, onUpdateEn
            if (decryptedFile.type.startsWith('image/')) {
               toast({ title: "Decryption Successful", description: `Image decrypted in ${decryptionTime.toFixed(2)} ms. Preview available.` });
           } else {
-               toast({ title: "Decryption Successful", description: `File '${originalName}' decrypted in ${decryptionTime.toFixed(2)} ms. Download available (preview not supported for this type).` });
+               toast({ title: "Decryption Successful", description: `File '${originalName}' decrypted in ${decryptionTime.toFixed(2)} ms. Download available.` });
           }
-
-
       } catch (err) {
           console.error("Decryption error:", err);
            const errorMessage = err instanceof Error ? err.message : "An unknown error occurred during decryption.";
@@ -544,46 +474,22 @@ export function MediCryptApp({ onLogout, email, role, encryptedFiles, onUpdateEn
           setStatus("error");
           setProgress(0);
           setDecryptedData(null);
-           if (decryptedPreviewUrlRef.current) {
-                URL.revokeObjectURL(decryptedPreviewUrlRef.current);
-                decryptedPreviewUrlRef.current = null;
-                setDecryptedPreviewUrl(null);
-           }
+           if (decryptedPreviewUrlRef.current) URL.revokeObjectURL(decryptedPreviewUrlRef.current);
+           decryptedPreviewUrlRef.current = null;
+           setDecryptedPreviewUrl(null);
           setDecryptedFileInfo(null);
           toast({ title: "Decryption Failed", description: errorMessage, variant: "destructive" });
       }
   };
 
-
   const handleDownload = (blob: Blob | null, defaultFilename?: string | null) => {
     if (!blob) return;
-
     let filename = defaultFilename || "download"; 
-
     if (mode === 'decrypt' && decryptedFileInfo?.name) {
         filename = decryptedFileInfo.name; 
     } else if (mode === 'encrypt' && selectedFile) {
-        const originalName = selectedFile.name;
-        filename = constructEncryptedFilename(originalName); 
-
-    } else {
-         filename = mode === 'encrypt' ? 'encrypted_output' : 'decrypted_output';
-         const mimeType = blob.type;
-         const knownExtensions: { [key: string]: string } = {
-             'image/jpeg': '.jpg',
-             'image/png': '.png',
-             'image/gif': '.gif',
-             'application/dicom': '.dcm',
-             'application/octet-stream': '.bin', 
-         };
-         if (mimeType && knownExtensions[mimeType] && !filename.includes('.')) {
-            filename += knownExtensions[mimeType];
-         } else if (!filename.includes('.')) {
-             filename += '.bin'; 
-         }
+        filename = constructEncryptedFilename(selectedFile.name); 
     }
-
-
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -596,53 +502,43 @@ export function MediCryptApp({ onLogout, email, role, encryptedFiles, onUpdateEn
 
   const constructEncryptedFilename = (originalName: string): string => {
       const parts = originalName.split('.');
-      if (parts.length > 1) {
-          const ext = parts.pop();
-          return `${parts.join('.')}.encrypted.${ext}`;
-      } else {
-           return `${originalName}.encrypted`;
-      }
+      const ext = parts.length > 1 ? parts.pop() : null;
+      return `${parts.join('.')}.encrypted${ext ? `.${ext}` : '.bin'}`; // Ensure an extension for encrypted files
   };
 
-   const handleModeChange = (newMode: Mode) => {
-        if (newMode === mode) return; 
-        setMode(newMode);
-        clearPreview();
-    };
+  const handleModeChange = (newMode: Mode) => {
+    if (newMode === mode) return; 
+    setMode(newMode);
+    clearPreview();
+  };
 
-    const handleReset = () => {
-        clearPreview(); 
+  const handleReset = () => clearPreview(); 
+
+  const handleCopyKey = async () => {
+    if (!encryptionKey) return;
+    try {
+      await navigator.clipboard.writeText(encryptionKey);
+      setIsKeyCopied(true);
+      toast({ title: "Key Copied", description: "Encryption key copied to clipboard." });
+      setTimeout(() => setIsKeyCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy key: ", err);
+      toast({ title: "Copy Failed", description: "Could not copy key to clipboard.", variant: "destructive" });
     }
+  };
 
-    const handleCopyKey = async () => {
-        if (!encryptionKey) return;
-        try {
-            await navigator.clipboard.writeText(encryptionKey);
-            setIsKeyCopied(true);
-            toast({ title: "Key Copied", description: "Encryption key copied to clipboard." });
-            setTimeout(() => setIsKeyCopied(false), 2000);
-        } catch (err) {
-            console.error("Failed to copy key: ", err);
-            toast({ title: "Copy Failed", description: "Could not copy key to clipboard.", variant: "destructive" });
-        }
-    };
-
-    const createMailtoLink = (): string => {
-        if (!encryptedData || !encryptionKey || !selectedFile) return "#"; 
-
-        const subject = `MediCrypt Encrypted File: ${selectedFile.name}`;
-        const body = `Please find the encrypted file attached.\n\nThe decryption key is: ${encryptionKey}\n\nKeep this key secure.`;
-
-        const encodedSubject = encodeURIComponent(subject);
-        const encodedBody = encodeURIComponent(body);
-
-        return `mailto:${email}?subject=${encodedSubject}&body=${encodedBody}`;
-    };
+  const createMailtoLink = (): string => {
+    if (!encryptedData || !encryptionKey || !selectedFile) return "#"; 
+    const subject = `MediCrypt Encrypted File: ${selectedFile.name}`;
+    const body = `Please find the encrypted file attached.\n\nThe decryption key is: ${encryptionKey}\n\nKeep this key secure.`;
+    return `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
 
   const isLoading = ["preprocessing", "generating_key", "encrypting", "decrypting", "analyzing", "sending_email"].includes(status); 
 
   return (
-      <Card className="w-full max-w-2xl shadow-lg relative">
+    <div className="w-full max-w-4xl mx-auto"> {/* Added a wrapper div for centering and max-width */}
+      <Card className="w-full shadow-lg relative">
           <TooltipProvider>
             <Tooltip>
                 <TooltipTrigger asChild>
@@ -662,7 +558,6 @@ export function MediCryptApp({ onLogout, email, role, encryptedFiles, onUpdateEn
              </Tooltip>
            </TooltipProvider>
 
-
         <CardHeader className="text-center pt-4 pr-12"> 
           <CardTitle className="text-3xl font-bold text-primary flex items-center justify-center gap-2">
              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8 text-accent">
@@ -672,7 +567,7 @@ export function MediCryptApp({ onLogout, email, role, encryptedFiles, onUpdateEn
              MediCrypt
           </CardTitle>
           <CardDescription className="text-muted-foreground">
-            Securely encrypt and decrypt your medical images using pixel scrambling & SM4.
+            Securely encrypt and decrypt your medical images.
             Logged in as: <Badge variant={role === 'admin' ? 'destructive' : 'secondary'}>{role}</Badge>
           </CardDescription>
            <div className="flex justify-center space-x-2 pt-4">
@@ -700,12 +595,11 @@ export function MediCryptApp({ onLogout, email, role, encryptedFiles, onUpdateEn
                     <AlertCircle className="h-4 w-4 text-yellow-600" />
                     <AlertTitle>Email Notification Disabled</AlertTitle>
                     <AlertDescription>
-                        EmailJS is not configured. Encryption keys will not be sent automatically via email. Please configure EmailJS environment variables (SERVICE_ID, TEMPLATE_ID, PUBLIC_KEY) to enable this feature. See `.env.local.example`.
+                        EmailJS is not configured. Encryption keys will not be sent automatically via email. Configure .env.local.
                     </AlertDescription>
                 </Alert>
             )}
 
-          {/* Admin-only Pixel Scrambling Configuration */}
           {role === 'admin' && mode === 'encrypt' && (
             <Card className="bg-secondary/30 border-border">
                 <CardHeader className="pb-2">
@@ -713,16 +607,14 @@ export function MediCryptApp({ onLogout, email, role, encryptedFiles, onUpdateEn
                         <Settings className="w-5 h-5 text-accent"/>
                         Admin: Scrambling Parameters
                     </CardTitle>
-                    <CardDescription className="text-xs">Configure Rubik's cube-inspired pixel scrambling.</CardDescription>
+                    <CardDescription className="text-xs">Configure pixel scrambling complexity.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3 pt-2">
                     <div>
-                        <Label htmlFor="rotation-layers" className="text-sm font-medium">Rotation Layers/Complexity ({rotationLayers})</Label>
+                        <Label htmlFor="rotation-layers" className="text-sm font-medium">Rotation Layers ({rotationLayers})</Label>
                         <Slider
                             id="rotation-layers"
-                            min={1}
-                            max={10}
-                            step={1}
+                            min={1} max={10} step={1}
                             value={[rotationLayers]}
                             onValueChange={(value) => setRotationLayers(value[0])}
                             className="mt-2"
@@ -734,15 +626,25 @@ export function MediCryptApp({ onLogout, email, role, encryptedFiles, onUpdateEn
             </Card>
           )}
 
-
           <ImageUpload
             onFileChange={handleFileChange}
-            previewUrl={mode === 'encrypt' ? previewUrl : null}
+            previewUrl={mode === 'encrypt' ? previewUrl : null} // Only show original preview in encrypt mode
             clearPreview={clearPreview} 
             id="medical-image-upload"
-            accept={mode === 'encrypt' ? "image/png, image/jpeg, image/dicom, image/x-ray, image/ct, image/mri" : "*/*"}
+            accept={mode === 'encrypt' ? "image/png, image/jpeg, image/dicom, image/x-ray, image/ct, image/mri" : "*/*"} // Accept any for decrypt
             disabled={isLoading}
            />
+           
+           {mode === 'decrypt' && selectedFile && !decryptedPreviewUrl && !decryptedData && ( // Show selected file info in decrypt mode before decryption
+                <Alert variant="default" className="mt-4">
+                     <FileKey className="h-4 w-4" />
+                    <AlertTitle>File to Decrypt: {selectedFile.name}</AlertTitle>
+                    <AlertDescription>
+                        Enter the decryption key below and click "Decrypt".
+                    </AlertDescription>
+                </Alert>
+            )}
+
 
           {status !== "idle" && status !== "error" && (
             <div className="space-y-2">
@@ -756,7 +658,6 @@ export function MediCryptApp({ onLogout, email, role, encryptedFiles, onUpdateEn
 
           {error && (
             <Alert variant="destructive">
-               <AlertCircle className="h-4 w-4" /> 
               <AlertTitle>Error</AlertTitle>
               <AlertDescription>{error}</AlertDescription>
             </Alert>
@@ -767,7 +668,7 @@ export function MediCryptApp({ onLogout, email, role, encryptedFiles, onUpdateEn
                     <div className="flex items-center space-x-2">
                         <FileKey className="h-5 w-5 text-muted-foreground flex-shrink-0"/>
                         <Input
-                            id="decryption-key-input"
+                            id="decryption-key-input" // Ensure ID is unique if form resets are an issue
                             type="text" 
                             placeholder="Enter Decryption Key (e.g., sm4key-...)"
                             value={decryptionKeyInput}
@@ -777,21 +678,18 @@ export function MediCryptApp({ onLogout, email, role, encryptedFiles, onUpdateEn
                             aria-label="Decryption Key"
                         />
                     </div>
-                    {/* Admin can also adjust layers for decryption if they know them, or if it's part of the system design */}
-                    {role === 'admin' && (
+                    {role === 'admin' && ( // Admin can also adjust layers for decryption
                          <div>
                             <Label htmlFor="decryption-rotation-layers" className="text-sm font-medium">Rotation Layers (for decryption - {rotationLayers})</Label>
                             <Slider
                                 id="decryption-rotation-layers"
-                                min={1}
-                                max={10}
-                                step={1}
+                                min={1} max={10} step={1}
                                 value={[rotationLayers]}
                                 onValueChange={(value) => setRotationLayers(value[0])}
                                 className="mt-2"
                                 disabled={isLoading || !selectedFile}
                             />
-                            <p className="text-xs text-muted-foreground mt-1">Ensure this matches the layers used during encryption.</p>
+                            <p className="text-xs text-muted-foreground mt-1">Ensure this matches layers used during encryption.</p>
                         </div>
                     )}
                 </div>
@@ -801,25 +699,13 @@ export function MediCryptApp({ onLogout, email, role, encryptedFiles, onUpdateEn
                 <Card className="bg-secondary/50 border-border">
                     <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
                         <CardTitle className="text-lg flex items-center gap-2">
-                             <ShieldCheck className="w-5 h-5 text-accent"/>
-                            Security Analysis
+                             <ShieldCheck className="w-5 h-5 text-accent"/> Security Analysis
                         </CardTitle>
                          {processTime != null && <span className="text-xs text-muted-foreground">Encryption Time: {processTime.toFixed(2)} ms</span>}
                     </CardHeader>
                     <CardContent className="text-sm space-y-1 pt-2">
-                        <div className="flex items-center gap-1">
-                            <span>Robustness Score:</span>
-                             <Badge variant="outline" className="ml-1">{analysisResults.robustness.toFixed(1)} / 100</Badge>
-                        </div>
-                        <div className="flex items-center gap-1">
-                             <span>Resistance Level:</span>
-                             <Badge
-                                 variant={analysisResults.resistance === 'High' ? 'default' : analysisResults.resistance === 'Medium' ? 'secondary' : 'destructive'}
-                                 className={`ml-1 ${analysisResults.resistance === 'High' ? 'bg-green-600 hover:bg-green-700 text-white border-green-700' : analysisResults.resistance === 'Medium' ? 'bg-yellow-500 hover:bg-yellow-600 text-black border-yellow-600' : 'bg-red-600 hover:bg-red-700 text-white border-red-700'}`}
-                                >
-                                    {analysisResults.resistance}
-                                </Badge>
-                        </div>
+                        <p>Robustness: <Badge variant="outline">{analysisResults.robustness.toFixed(1)}/100</Badge></p>
+                        <p>Resistance: <Badge variant={analysisResults.resistance === 'High' ? 'default' : analysisResults.resistance === 'Medium' ? 'secondary' : 'destructive'} className={analysisResults.resistance === 'High' ? 'bg-green-600 hover:bg-green-700' : analysisResults.resistance === 'Medium' ? 'bg-yellow-500 hover:bg-yellow-600 text-black' : ''}>{analysisResults.resistance}</Badge></p>
                          {encryptionKey && (
                             <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border/50">
                                 <span className="text-xs">Generated Key:</span>
@@ -827,19 +713,11 @@ export function MediCryptApp({ onLogout, email, role, encryptedFiles, onUpdateEn
                                 <TooltipProvider>
                                     <Tooltip>
                                         <TooltipTrigger asChild>
-                                             <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-6 w-6 flex-shrink-0"
-                                                onClick={handleCopyKey}
-                                                aria-label="Copy encryption key"
-                                             >
+                                             <Button variant="ghost" size="icon" className="h-6 w-6 flex-shrink-0" onClick={handleCopyKey} aria-label="Copy encryption key">
                                                  {isKeyCopied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4 text-muted-foreground" />}
                                             </Button>
                                         </TooltipTrigger>
-                                         <TooltipContent>
-                                            <p>{isKeyCopied ? "Copied!" : "Copy Key"}</p>
-                                        </TooltipContent>
+                                         <TooltipContent><p>{isKeyCopied ? "Copied!" : "Copy Key"}</p></TooltipContent>
                                      </Tooltip>
                                 </TooltipProvider>
                             </div>
@@ -847,17 +725,7 @@ export function MediCryptApp({ onLogout, email, role, encryptedFiles, onUpdateEn
                          {isEmailJsConfigured && encryptionKey && (
                              <div className="flex items-center gap-2 mt-1 pt-1 text-xs border-t border-border/50">
                                  <Mail className={`h-4 w-4 ${emailSent ? 'text-green-600' : 'text-muted-foreground'}`}/>
-                                 <span>Email Status:</span>
-                                 {emailSent ? (
-                                     <span className="text-green-600">Key sent successfully</span>
-                                 ) : (status === 'error' && errorMessageIncludesEmail(error)) ? ( 
-                                     <span className="text-destructive">Failed to send key</span>
-                                 ) : (status === 'sending_email') ? (
-                                    <span className="text-muted-foreground">Sending...</span>
-                                 ) : (
-                                    <span className="text-muted-foreground">Not sent yet</span>
-                                 )
-                                }
+                                 <span>Email Status: {emailSent ? <span className="text-green-600">Key sent</span> : (status === 'error' && errorMessageIncludesEmail(error)) ? <span className="text-destructive">Failed</span> : <span className="text-muted-foreground">Not sent/Pending</span>}</span>
                              </div>
                          )}
                          {!isEmailJsConfigured && encryptionKey && (
@@ -876,14 +744,7 @@ export function MediCryptApp({ onLogout, email, role, encryptedFiles, onUpdateEn
                          <p className="text-sm font-medium">Decrypted Image:</p>
                          {processTime != null && <span className="text-xs text-muted-foreground">Decryption Time: {processTime.toFixed(2)} ms</span>}
                     </div>
-                    <Image
-                        src={decryptedPreviewUrl}
-                        alt="Decrypted preview"
-                        width={200}
-                        height={200}
-                        className="max-h-48 w-auto object-contain rounded-md border border-border"
-                        data-ai-hint="decrypted medical scan"
-                     />
+                    <Image src={decryptedPreviewUrl} alt="Decrypted preview" width={200} height={200} className="max-h-48 w-auto object-contain rounded-md border border-border" data-ai-hint="decrypted medical scan"/>
                  </div>
             )}
              {mode === 'decrypt' && decryptedData && !decryptedPreviewUrl && status === 'complete' && decryptedFileInfo && (
@@ -891,18 +752,17 @@ export function MediCryptApp({ onLogout, email, role, encryptedFiles, onUpdateEn
                     <Download className="h-4 w-4" />
                     <AlertTitle>Decryption Complete</AlertTitle>
                     <AlertDescription>
-                        The decrypted file ({decryptedFileInfo.name || 'unknown file'}) is ready for download. Preview is not available for this file type ({decryptedFileInfo.type || 'unknown type'}).
-                         {processTime != null && ` (Decryption Time: ${processTime.toFixed(2)} ms)`}
+                        File '{decryptedFileInfo.name}' ({decryptedFileInfo.type}) is ready. Preview unavailable.
+                         {processTime != null && ` (Time: ${processTime.toFixed(2)} ms)`}
                     </AlertDescription>
                  </Alert>
             )}
-
         </CardContent>
         <CardFooter className="flex flex-col sm:flex-row justify-between gap-3 pt-4">
           <div className="flex gap-2 w-full sm:w-auto flex-wrap justify-center sm:justify-start">
             {mode === 'encrypt' && (
                  <Button onClick={handleEncrypt} disabled={isLoading || !selectedFile || (status === 'complete' && mode === 'encrypt')} className="w-full sm:w-auto flex-1 sm:flex-none min-w-[120px] bg-accent hover:bg-accent/90">
-                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Lock className="mr-2 h-4 w-4" />}
+                    {isLoading && !["sending_email", "complete", "error"].includes(status) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Lock className="mr-2 h-4 w-4" />}
                      {status === 'preprocessing' ? 'Preprocessing...' :
                       status === 'generating_key' ? 'Generating Key...' :
                       status === 'encrypting' ? 'Encrypting...' :
@@ -918,45 +778,25 @@ export function MediCryptApp({ onLogout, email, role, encryptedFiles, onUpdateEn
                  </Button>
             )}
              <Button variant="outline" onClick={handleReset} disabled={isLoading} className="w-full sm:w-auto flex-1 sm:flex-none min-w-[100px]">
-                <RotateCcw className="mr-2 h-4 w-4" />
-                Reset
+                <RotateCcw className="mr-2 h-4 w-4" /> Reset
              </Button>
           </div>
 
           <div className="flex gap-2 w-full sm:w-auto flex-wrap justify-center sm:justify-start">
             {mode === 'encrypt' && encryptedData && (status === 'complete' || (status === 'error' && !errorMessageIncludesEmail(error))) && ( 
                 <>
-                 <Button variant="outline" onClick={() => handleDownload(encryptedData, constructEncryptedFilename(selectedFile!.name))} className="w-full sm:w-auto flex-1 sm:flex-none min-w-[150px]">
-                    <Download className="mr-2 h-4 w-4" />
-                    Download Encrypted
+                 <Button variant="outline" onClick={() => handleDownload(encryptedData, selectedFile ? constructEncryptedFilename(selectedFile.name) : undefined)} className="w-full sm:w-auto flex-1 sm:flex-none min-w-[150px]">
+                    <Download className="mr-2 h-4 w-4" /> Download Encrypted
                  </Button>
                  {(!isEmailJsConfigured || (status === 'error' && errorMessageIncludesEmail(error))) && encryptionKey && selectedFile && (
                     <TooltipProvider>
                          <Tooltip>
                             <TooltipTrigger asChild>
-                                <a
-                                    href={createMailtoLink()}
-                                    target="_blank" 
-                                    rel="noopener noreferrer" 
-                                    className={`inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2 w-full sm:w-auto flex-1 sm:flex-none min-w-[150px]`}
-                                    onClick={(e) => {
-                                        if (createMailtoLink() === "#") {
-                                            e.preventDefault();
-                                            toast({ title: "Cannot Email", description: "Missing encrypted file or key.", variant: "destructive" });
-                                        }
-                                    }}
-                                >
-                                    <Send className="mr-2 h-4 w-4" /> 
-                                    Email Key Manually
+                                <a href={createMailtoLink()} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2 w-full sm:w-auto flex-1 sm:flex-none min-w-[150px]">
+                                    <Send className="mr-2 h-4 w-4" /> Email Key Manually
                                 </a>
                             </TooltipTrigger>
-                            <TooltipContent>
-                                {!isEmailJsConfigured ? (
-                                    <p>Auto-email disabled. Click to open your email client with the key.</p>
-                                ) : (
-                                    <p>Auto-email failed. Click to open your email client with the key.</p>
-                                )}
-                            </TooltipContent>
+                            <TooltipContent><p>{!isEmailJsConfigured ? "Auto-email disabled." : "Auto-email failed."} Click to use your email client.</p></TooltipContent>
                          </Tooltip>
                     </TooltipProvider>
                   )}
@@ -964,17 +804,21 @@ export function MediCryptApp({ onLogout, email, role, encryptedFiles, onUpdateEn
              )}
               {mode === 'decrypt' && decryptedData && status === 'complete' && (
                  <Button variant="outline" onClick={() => handleDownload(decryptedData, decryptedFileInfo?.name)} className="w-full sm:w-auto flex-1 sm:flex-none min-w-[150px]">
-                    <Download className="mr-2 h-4 w-4" />
-                    Download Decrypted
+                    <Download className="mr-2 h-4 w-4" /> Download Decrypted
                  </Button>
              )}
            </div>
         </CardFooter>
       </Card>
+
+      {/* Admin Dashboard Section */}
+      {role === 'admin' && allUsers && (
+          <AdminDashboard users={allUsers} />
+      )}
+    </div>
   );
 }
 
 function errorMessageIncludesEmail(error: string | null): boolean {
     return !!error && (error.toLowerCase().includes('email') || error.toLowerCase().includes('emailjs'));
 }
-

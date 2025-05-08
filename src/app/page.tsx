@@ -5,223 +5,200 @@ import * as React from "react";
 import { LoginRegisterForm } from "@/components/auth/login-register-form";
 import { MediCryptApp } from "@/components/medi-crypt-app";
 import { useToast } from "@/hooks/use-toast";
-// Toaster is typically in layout.tsx, but kept here for standalone demo potential
-// import { Toaster } from "@/components/ui/toaster";
+import type { MockUser } from "@/types/user"; // Import MockUser type
 
-// --- Mock User Data Store ---
-// In a real application, this would be replaced by a secure backend and database.
-interface MockUser {
-  email: string; 
-  passwordHash: string; // Simulate a hashed password
-  keyFileData: string; // Simulate key file content
-  encryptedFiles?: { [originalFilename: string]: string }; // Store { originalFilename: decryptionKey }
-  role: 'admin' | 'user'; 
-}
-
-const MOCK_USER_STORAGE_KEY = "mockUserData";
-const ADMIN_DOMAIN_FOR_DEMO = "medicrypt.com"; // Admin domain
-
-// --- Component ---
+const MOCK_USER_STORAGE_KEY = "mockUserData_v2"; // Changed key to avoid conflict during transition and signify new structure
+const ADMIN_DOMAIN_FOR_DEMO = "medicrypt.com";
 
 export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = React.useState(false);
   const [currentUser, setCurrentUser] = React.useState<MockUser | null>(null);
-  // Use state to manage mock user data to avoid direct localStorage access during SSR/initial render
-  const [mockUser, setMockUser] = React.useState<MockUser | null>(null);
-  const [isLoading, setIsLoading] = React.useState(true); // Track initial loading state
+  const [mockUsersData, setMockUsersData] = React.useState<MockUser[]>([]); // Stores array of users
+  const [isLoading, setIsLoading] = React.useState(true);
   const { toast } = useToast();
 
-   // Load user data from localStorage only on the client-side after hydration
-   React.useEffect(() => {
-     if (typeof window !== 'undefined') {
-        const storedData = localStorage.getItem(MOCK_USER_STORAGE_KEY);
-        if (storedData) {
-            try {
-                const parsedUser: MockUser = JSON.parse(storedData);
-                // Ensure encryptedFiles exists
-                if (!parsedUser.encryptedFiles) {
-                    parsedUser.encryptedFiles = {};
-                }
-                // Ensure role exists, default to 'user' if missing for backward compatibility
-                // Update role assignment based on domain
-                if (!parsedUser.role) {
-                    parsedUser.role = parsedUser.email.toLowerCase().endsWith(`@${ADMIN_DOMAIN_FOR_DEMO.toLowerCase()}`) ? 'admin' : 'user';
-                }
-                setMockUser(parsedUser);
-                // Optionally, you could auto-login here if a session token was stored
-                // For this demo, we require login each time.
-            } catch (e) {
-                console.error("Failed to parse user data from localStorage", e);
-                localStorage.removeItem(MOCK_USER_STORAGE_KEY); // Clear invalid data
-            }
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const storedData = localStorage.getItem(MOCK_USER_STORAGE_KEY);
+      let usersToStore: MockUser[] = [];
+      if (storedData) {
+        try {
+          let parsedData = JSON.parse(storedData);
+
+          if (Array.isArray(parsedData)) {
+            // New format (array of users)
+            usersToStore = parsedData.map((user: any) => ({ // Add 'any' for type safety during migration
+              email: user.email,
+              passwordHash: user.passwordHash,
+              keyFileData: user.keyFileData,
+              encryptedFiles: user.encryptedFiles || {},
+              role: user.role || (user.email?.toLowerCase().endsWith(`@${ADMIN_DOMAIN_FOR_DEMO.toLowerCase()}`) ? 'admin' : 'user'),
+            }));
+          } else if (typeof parsedData === 'object' && parsedData !== null && parsedData.email) {
+            // Attempt to migrate old format (single user object)
+            console.warn("Migrating old single-user data format to new array format.");
+            usersToStore = [{
+              email: parsedData.email,
+              passwordHash: parsedData.passwordHash,
+              keyFileData: parsedData.keyFileData,
+              encryptedFiles: parsedData.encryptedFiles || {},
+              role: parsedData.role || (parsedData.email?.toLowerCase().endsWith(`@${ADMIN_DOMAIN_FOR_DEMO.toLowerCase()}`) ? 'admin' : 'user'),
+            }];
+          } else {
+            // Invalid data format
+            console.error("Invalid data format in localStorage, clearing.");
+            localStorage.removeItem(MOCK_USER_STORAGE_KEY);
+          }
+        } catch (e) {
+          console.error("Failed to parse or migrate user data from localStorage", e);
+          localStorage.removeItem(MOCK_USER_STORAGE_KEY); // Clear invalid data
         }
-     }
-     setIsLoading(false); // Finished loading attempt
-   }, []);
+      }
+      setMockUsersData(usersToStore.filter(user => user.email && user.passwordHash && user.keyFileData)); // Ensure basic validity
+    }
+    setIsLoading(false);
+  }, []);
 
-    // Function to get the current mock user (avoids direct localStorage reads in child components)
-    const getMockUser = (): MockUser | null => {
-        return mockUser;
-    };
+  const getMockUsers = (): MockUser[] => {
+    return mockUsersData;
+  };
 
-    // Function to save the mock user (updates state and localStorage)
-    const saveMockUser = (user: MockUser | null) => {
-        if (user) {
-             if (typeof window !== 'undefined') {
-                localStorage.setItem(MOCK_USER_STORAGE_KEY, JSON.stringify(user));
-             }
-            setMockUser(user);
-        } else {
-            if (typeof window !== 'undefined') {
-                 localStorage.removeItem(MOCK_USER_STORAGE_KEY);
-            }
-            setMockUser(null);
+  const saveMockUsers = (users: MockUser[]) => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(MOCK_USER_STORAGE_KEY, JSON.stringify(users));
+    }
+    setMockUsersData(users);
+  };
+
+  const updateUserEncryptedFiles = (originalFilename: string, decryptionKey: string) => {
+    if (currentUser && mockUsersData) {
+      const updatedUsers = mockUsersData.map(user => {
+        if (user.email.toLowerCase() === currentUser.email.toLowerCase()) {
+          return {
+            ...user,
+            encryptedFiles: {
+              ...(user.encryptedFiles || {}),
+              [originalFilename]: decryptionKey,
+            },
+          };
         }
-    };
+        return user;
+      });
+      saveMockUsers(updatedUsers);
 
-    // Function to clear the mock user (updates state and localStorage)
-    const clearMockUser = () => {
-        saveMockUser(null);
-    };
-
-    // Function to update only the encrypted files part of the user data
-    const updateUserEncryptedFiles = (originalFilename: string, decryptionKey: string) => {
-        if (mockUser) {
-            const updatedUser: MockUser = {
-                ...mockUser,
-                encryptedFiles: {
-                    ...(mockUser.encryptedFiles || {}), // Ensure encryptedFiles is an object
-                    [originalFilename]: decryptionKey,
-                },
-            };
-            saveMockUser(updatedUser);
-            // Update currentUser state as well if the logged-in user is the one being updated
-            if (currentUser && currentUser.email === updatedUser.email) { 
-                 setCurrentUser(updatedUser);
+      setCurrentUser(prevUser => {
+        if (prevUser && prevUser.email.toLowerCase() === currentUser.email.toLowerCase()) {
+          return {
+            ...prevUser,
+            encryptedFiles: {
+              ...(prevUser.encryptedFiles || {}),
+              [originalFilename]: decryptionKey,
             }
-             toast({
-                title: "Encryption Key Saved",
-                description: `Key for '${originalFilename}' stored in your profile.`,
-            });
-        } else {
-            console.error("Attempted to update encrypted files, but no user data found.");
-             toast({
-                title: "Error Saving Key",
-                description: "Could not save the encryption key. User data not found.",
-                variant: "destructive",
-             });
+          };
         }
-    };
+        return prevUser;
+      });
 
-
-  const handleLoginSuccess = (email: string, role: 'admin' | 'user') => { 
-    const user = getMockUser(); // Use the state-backed getter
-    // Basic check - in reality, server validates credentials & key
-    // The login form already performed the necessary checks based on getMockUser() data
-    if (user && user.email.toLowerCase() === email.toLowerCase()) {
-      setIsAuthenticated(true);
-      // Ensure encryptedFiles and role are initialized/correct
-      const loggedInUser: MockUser = {
-        ...user,
-        encryptedFiles: user.encryptedFiles || {},
-        role: role, // Use role from login callback
-      };
-      setCurrentUser(loggedInUser); // Set the currently logged-in user state
-      toast({ title: "Login Successful", description: `Welcome back, ${email} (${role})!` });
+      toast({
+        title: "Encryption Key Saved",
+        description: `Key for '${originalFilename}' stored in your profile.`,
+      });
     } else {
-        // This case should ideally not happen if LoginRegisterForm logic is correct
-        console.error("Login success handler called but user data mismatch.");
-        toast({ title: "Login Failed", description: "An unexpected error occurred during login.", variant: "destructive" });
+      console.error("Attempted to update encrypted files, but no current user or user data found.");
+      toast({
+        title: "Error Saving Key",
+        description: "Could not save the encryption key. User data not found.",
+        variant: "destructive",
+      });
     }
   };
 
+  const handleLoginSuccess = (loggedInUser: MockUser) => {
+    setIsAuthenticated(true);
+    // Ensure encryptedFiles is initialized (should be by now, but good practice)
+    const userWithInitializedFiles: MockUser = {
+        ...loggedInUser,
+        encryptedFiles: loggedInUser.encryptedFiles || {}
+    };
+    setCurrentUser(userWithInitializedFiles);
+    toast({ title: "Login Successful", description: `Welcome back, ${loggedInUser.email} (${loggedInUser.role})!` });
+  };
+
   const handleRegisterSuccess = (email: string, keyBlob: Blob) => {
-    // Simulate password hashing and prepare user data
-    // In a real app, the server would handle password hashing.
-    const passwordHash = `hashed_${email}_password`; // Simple simulation using email
+    const passwordHash = `hashed_${email}_password`;
     const reader = new FileReader();
 
     reader.onload = (event) => {
-        const keyFileData = event.target?.result as string;
-        if (!keyFileData) {
-             toast({ title: "Registration Failed", description: "Could not read generated key file.", variant: "destructive" });
-             return;
-        }
-        // Assign role based on email domain
-        const role: 'admin' | 'user' = email.toLowerCase().endsWith(`@${ADMIN_DOMAIN_FOR_DEMO.toLowerCase()}`) ? 'admin' : 'user';
+      const keyFileData = event.target?.result as string;
+      if (!keyFileData) {
+        toast({ title: "Registration Failed", description: "Could not read generated key file.", variant: "destructive" });
+        return;
+      }
+      const role: 'admin' | 'user' = email.toLowerCase().endsWith(`@${ADMIN_DOMAIN_FOR_DEMO.toLowerCase()}`) ? 'admin' : 'user';
+      const newUser: MockUser = { email, passwordHash, keyFileData, encryptedFiles: {}, role };
 
-        // Initialize encryptedFiles as an empty object for new users
-        const newUser: MockUser = { email, passwordHash, keyFileData, encryptedFiles: {}, role };
-        saveMockUser(newUser); // Save the new user to state and localStorage
+      try {
+        const url = URL.createObjectURL(keyBlob);
+        const a = document.createElement("a");
+        a.href = url;
+        const emailPrefix = email.includes('@') ? email.split('@')[0] : email;
+        a.download = `${emailPrefix}_medicrypt_key.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
 
-        // Trigger key file download (using email for filename prefix)
-        try {
-            const url = URL.createObjectURL(keyBlob);
-            const a = document.createElement("a");
-            a.href = url;
-            // Extract local part of email for a cleaner filename, fallback if no '@'
-            const emailPrefix = email.includes('@') ? email.split('@')[0] : email;
-            a.download = `${emailPrefix}_medicrypt_key.txt`; 
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+        // Save user only after successful download
+        const currentUsers = getMockUsers();
+        const updatedUsers = [...currentUsers, newUser];
+        saveMockUsers(updatedUsers);
 
-             toast({
-                title: "Registration Successful",
-                description: `Account created as ${role}. Key file downloaded. Please log in.`,
-            });
-        } catch (downloadError) {
-             console.error("Failed to trigger key file download:", downloadError);
-             toast({ title: "Registration Warning", description: "Account created, but key file download failed. Please try registering again or contact support.", variant: "destructive" });
-              // Consider rolling back the user save or providing manual download instructions
-              clearMockUser(); // Rollback user save on download failure for this demo
-        }
+        toast({
+          title: "Registration Successful",
+          description: `Account created as ${role}. Key file downloaded. Please log in.`,
+        });
+      } catch (downloadError) {
+        console.error("Failed to trigger key file download:", downloadError);
+        toast({ title: "Registration Warning", description: "Account not created. Key file download failed. Please try registering again.", variant: "destructive" });
+        // User is not saved if download fails, so no explicit rollback of data needed
+      }
     };
-     reader.onerror = () => {
-        toast({ title: "Registration Failed", description: "Could not process key file data.", variant: "destructive" });
+    reader.onerror = () => {
+      toast({ title: "Registration Failed", description: "Could not process key file data.", variant: "destructive" });
     };
-    // Read blob as text to store it; adjust if storing as base64 needed later
     reader.readAsText(keyBlob);
   };
 
   const handleLogout = () => {
     setIsAuthenticated(false);
     setCurrentUser(null);
-    // It's generally good practice to clear sensitive user data on logout,
-    // even in a mock scenario, unless you specifically need persistence across sessions without login.
-    // clearMockUser(); // Uncomment if you want to force re-registration/login after logout
     toast({ title: "Logged Out", description: "You have been successfully logged out." });
   };
 
-   // Show loading state until client-side check is complete
-   if (isLoading) {
-        return (
-             <main className="flex min-h-screen flex-col items-center justify-center p-4 sm:p-8 lg:p-12 bg-secondary">
-                <p>Loading...</p>
-             </main>
-        );
-    }
+  if (isLoading) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center p-4 sm:p-8 lg:p-12 bg-secondary">
+        <p>Loading...</p>
+      </main>
+    );
+  }
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-4 sm:p-8 lg:p-12 bg-secondary">
-      {!isAuthenticated ? (
+      {!isAuthenticated || !currentUser ? (
         <LoginRegisterForm
           onLoginSuccess={handleLoginSuccess}
           onRegisterSuccess={handleRegisterSuccess}
-          getMockUser={getMockUser} // Pass state-backed getter function
+          getMockUsers={getMockUsers}
         />
       ) : (
-        // Pass encryptedFiles and the update function to MediCryptApp
         <MediCryptApp
-            onLogout={handleLogout}
-            email={currentUser?.email || 'User'}
-            role={currentUser?.role || 'user'} // Pass role
-            encryptedFiles={currentUser?.encryptedFiles || {}}
-            onUpdateEncryptedFiles={updateUserEncryptedFiles}
+          onLogout={handleLogout}
+          currentUser={currentUser}
+          onUpdateEncryptedFiles={updateUserEncryptedFiles}
+          allUsers={currentUser.role === 'admin' ? mockUsersData : undefined}
         />
       )}
-       {/* Toaster is included via RootLayout */}
     </main>
   );
 }
