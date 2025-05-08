@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from "react";
@@ -7,8 +8,6 @@ import { useToast } from "@/hooks/use-toast";
 import type { MockUser } from "@/types/user"; // Import MockUser type
 
 const MOCK_USER_STORAGE_KEY = "mockUserData_v2";
-// This specific email address, when used for registration, will create an admin account.
-const PREDEFINED_ADMIN_EMAIL = "admin@medicrypt.system"; 
 
 export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = React.useState(false);
@@ -27,7 +26,7 @@ export default function Home() {
 
           if (Array.isArray(parsedData)) {
             // New format (array of users)
-            usersToStore = parsedData.map((user: any) => ({ 
+            usersToStore = parsedData.map((user: any) => ({
               email: user.email,
               passwordHash: user.passwordHash,
               keyFileData: user.keyFileData,
@@ -123,7 +122,7 @@ export default function Home() {
     toast({ title: "Login Successful", description: `Welcome back, ${loggedInUser.email} (${loggedInUser.role})!` });
   };
 
-  const handleRegisterSuccess = (email: string, keyBlob: Blob) => {
+  const handleRegisterSuccess = (email: string, keyBlob: Blob, role: 'user' | 'admin') => {
     const passwordHash = `hashed_${email}_password`; // Simplified for demo
     const reader = new FileReader();
 
@@ -133,9 +132,6 @@ export default function Home() {
         toast({ title: "Registration Failed", description: "Could not read generated key file.", variant: "destructive" });
         return;
       }
-
-      // Determine role based on email
-      const role: 'admin' | 'user' = email.toLowerCase() === PREDEFINED_ADMIN_EMAIL.toLowerCase() ? 'admin' : 'user';
       
       const newUser: MockUser = { email, passwordHash, keyFileData, encryptedFiles: {}, role };
 

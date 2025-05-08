@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import { Lock, UserPlus, KeyRound, FileText, Loader2, Mail } from "lucide-react";
+import { Lock, UserPlus, KeyRound, FileText, Loader2, Mail, UserCog, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,15 +11,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import type { MockUser } from "@/types/user"; // Import MockUser type
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 interface LoginRegisterFormProps {
   onLoginSuccess: (user: MockUser) => void; // Pass the full user object
-  onRegisterSuccess: (email: string, keyBlob: Blob) => void;
+  onRegisterSuccess: (email: string, keyBlob: Blob, role: 'user' | 'admin') => void;
   getMockUsers: () => MockUser[]; // Function to retrieve all mock users
 }
 
 export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUsers }: LoginRegisterFormProps) {
   const [mode, setMode] = React.useState<"login" | "register">("login");
+  const [selectedRole, setSelectedRole] = React.useState<'user' | 'admin'>('user');
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [keyFile, setKeyFile] = React.useState<File | null>(null);
@@ -39,11 +41,9 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
     setKeyFile(null);
     setIsLoading(false);
     setError(null);
+    // setSelectedRole('user'); // Optionally reset role or keep last selection
     const fileInputLogin = document.getElementById('key-file-input-login') as HTMLInputElement;
     if (fileInputLogin) fileInputLogin.value = "";
-    // No separate file input for register in current UI, but good to keep if added
-    // const fileInputRegister = document.getElementById('key-file-input-register') as HTMLInputElement;
-    // if (fileInputRegister) fileInputRegister.value = "";
   }
 
   const handleTabChange = (value: string) => {
@@ -78,22 +78,25 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
           throw new Error("User not found. Please register first or check your email.");
         }
         // Password check simulation
-        const simulatedCorrectPasswordHash = `hashed_${storedUser.email}_password`; // This should match registration
-        if (password !== "password" && `hashed_${email}_password` !== storedUser.passwordHash) { // Allow "password" for easy demo, OR check simulated hash. Real app: server checks real hash.
-            // For this demo, we are not actually hashing the input password,
-            // so this check relies on the simulated hash stored during registration
-             if (`hashed_${email}_password` !== storedUser.passwordHash) { // Compare with the hash stored for the user
+        const simulatedCorrectPasswordHash = `hashed_${storedUser.email}_password`; 
+        if (password !== "password" && `hashed_${email}_password` !== storedUser.passwordHash) {
+             if (`hashed_${email}_password` !== storedUser.passwordHash) { 
                 throw new Error("Invalid password.");
             }
         }
-
 
         if (keyFile) {
           const reader = new FileReader();
           reader.onload = (e) => {
             const uploadedKeyData = e.target?.result as string;
             if (uploadedKeyData?.trim() === storedUser.keyFileData?.trim()) {
-              onLoginSuccess(storedUser); // Pass the full user object
+              // Check if selected role matches stored role for login - optional strict check
+              // if (selectedRole !== storedUser.role) {
+              //   setError(`This account is a ${storedUser.role} account. Please select the correct role to log in.`);
+              //   setIsLoading(false);
+              //   return;
+              // }
+              onLoginSuccess(storedUser); 
               resetForm();
             } else {
               setError("Invalid key file content.");
@@ -117,14 +120,13 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
           throw new Error("Please enter a valid email address.");
         }
 
-        const keyFileContent = `USER_KEY_FOR_${email.toUpperCase()}_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+        const keyFileContent = `USER_KEY_FOR_${email.toUpperCase()}_ROLE_${selectedRole.toUpperCase()}_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
         const keyBlob = new Blob([keyFileContent], { type: "text/plain" });
         
-        onRegisterSuccess(email, keyBlob); // Parent handles user creation and saving
+        onRegisterSuccess(email, keyBlob, selectedRole); 
 
         resetForm();
         setIsLoading(false);
-        // Optional: toast for check email for key, or switch to login tab
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "An unknown error occurred.");
@@ -154,6 +156,28 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
           </TabsList>
           <form onSubmit={handleSubmit}>
             <div className="space-y-3 mt-4">
+               {/* Role Selection for Registration - always visible for clarity, but only impacts registration */}
+               <RadioGroup
+                value={selectedRole}
+                onValueChange={(value: 'user' | 'admin') => setSelectedRole(value)}
+                className="flex space-x-4 mb-3 justify-center items-center pt-2"
+                aria-label="Account Type"
+                // disabled={isLoading} // Keep enabled to allow selection before form submission
+               >
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="user" id="role-user" />
+                  <Label htmlFor="role-user" className="flex items-center gap-1 cursor-pointer">
+                    <User className="h-4 w-4"/> User
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="admin" id="role-admin" />
+                  <Label htmlFor="role-admin" className="flex items-center gap-1 cursor-pointer">
+                    <UserCog className="h-4 w-4"/> Admin
+                  </Label>
+                </div>
+              </RadioGroup>
+
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                 <Input
@@ -200,11 +224,15 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
                 />
               </div>
               {keyFile && <p className="text-xs text-muted-foreground text-center">Selected key: {keyFile.name}</p>}
+               <p className="text-xs text-muted-foreground text-center pt-1">
+                Log in as a {selectedRole}. The system will verify your actual role.
+              </p>
             </TabsContent>
 
             <TabsContent value="register" className="mt-4">
               <p className="text-sm text-muted-foreground text-center">
-                A unique security key file will be generated and downloaded upon registration. Keep it safe!
+                Registering as a <span className="font-semibold text-accent">{selectedRole}</span>.
+                A unique security key file will be generated and downloaded. Keep it safe!
               </p>
             </TabsContent>
 
@@ -217,7 +245,7 @@ export function LoginRegisterForm({ onLoginSuccess, onRegisterSuccess, getMockUs
 
             <Button type="submit" className="w-full mt-6 bg-accent hover:bg-accent/90" disabled={isLoading}>
               {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (mode === 'login' ? <Lock className="mr-2 h-4 w-4" /> : <UserPlus className="mr-2 h-4 w-4" />)}
-              {isLoading ? "Processing..." : (mode === "login" ? "Login" : "Register")}
+              {isLoading ? "Processing..." : (mode === "login" ? "Login" : `Register as ${selectedRole}`)}
             </Button>
           </form>
         </Tabs>
