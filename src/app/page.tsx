@@ -1,4 +1,3 @@
-
 "use client";
 
 import * as React from "react";
@@ -7,8 +6,9 @@ import { MediCryptApp } from "@/components/medi-crypt-app";
 import { useToast } from "@/hooks/use-toast";
 import type { MockUser } from "@/types/user"; // Import MockUser type
 
-const MOCK_USER_STORAGE_KEY = "mockUserData_v2"; 
-// const ADMIN_DOMAIN_FOR_DEMO = "medicrypt.com"; // Removed: Admin role no longer tied to email domain
+const MOCK_USER_STORAGE_KEY = "mockUserData_v2";
+// This specific email address, when used for registration, will create an admin account.
+const PREDEFINED_ADMIN_EMAIL = "admin@medicrypt.system"; 
 
 export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = React.useState(false);
@@ -124,7 +124,7 @@ export default function Home() {
   };
 
   const handleRegisterSuccess = (email: string, keyBlob: Blob) => {
-    const passwordHash = `hashed_${email}_password`;
+    const passwordHash = `hashed_${email}_password`; // Simplified for demo
     const reader = new FileReader();
 
     reader.onload = (event) => {
@@ -133,8 +133,10 @@ export default function Home() {
         toast({ title: "Registration Failed", description: "Could not read generated key file.", variant: "destructive" });
         return;
       }
-      // All new registrations through this form are 'user' role
-      const role: 'user' = 'user'; 
+
+      // Determine role based on email
+      const role: 'admin' | 'user' = email.toLowerCase() === PREDEFINED_ADMIN_EMAIL.toLowerCase() ? 'admin' : 'user';
+      
       const newUser: MockUser = { email, passwordHash, keyFileData, encryptedFiles: {}, role };
 
       try {
