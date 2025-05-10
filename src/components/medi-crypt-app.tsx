@@ -4,7 +4,7 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { Upload, Download, Lock, Unlock, Loader2, RotateCcw, FileKey, LogOut, ShieldCheck, Copy, Check, Mail, AlertCircle, Send, Users, Settings } from "lucide-react";
+import { Upload, Download, Lock, Unlock, Loader2, RotateCcw, FileKey, LogOut, ShieldCheck, Copy, Check, Mail, AlertCircle, Send, Users, Settings, MailPlus } from "lucide-react";
 import emailjs from 'emailjs-com'; 
 
 import { Button } from "@/components/ui/button";
@@ -178,7 +178,10 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
   const [encryptionKey, setEncryptionKey] = React.useState<string | null>(null); 
   const [decryptionKeyInput, setDecryptionKeyInput] = React.useState<string>(""); 
   const [error, setError] = React.useState<string | null>(null);
-  const [mode, setMode] = React.useState<Mode>("encrypt"); 
+  
+  const [mode, setMode] = React.useState<Mode>(currentUser.role === 'admin' ? 'encrypt' : 'decrypt'); 
+  const [recipientEmail, setRecipientEmail] = React.useState<string>("");
+
   const [analysisResults, setAnalysisResults] = React.useState<{ robustness: number; resistance: string } | null>(null);
   const [processTime, setProcessTime] = React.useState<number | null>(null);
   const [decryptedFileInfo, setDecryptedFileInfo] = React.useState<{ name: string; type: string, layers: number } | null>(null);
@@ -192,11 +195,16 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
   const { email, role, encryptedFiles } = currentUser;
 
   const [adminView, setAdminView] = React.useState<'dashboard' | 'encryptDecrypt'>(
-    role === 'admin' ? 'dashboard' : 'encryptDecrypt'
+    role === 'admin' ? 'dashboard' : 'encryptDecrypt' // Admins start on dashboard, users go straight to tool
   );
 
    React.useEffect(() => {
-        if (mode === 'decrypt' && selectedFile && ((role === 'admin' && adminView === 'encryptDecrypt') || role !== 'admin')) {
+        // If user is not admin, ensure mode is always decrypt
+        if (role === 'user' && mode !== 'decrypt') {
+            setMode('decrypt');
+        }
+
+        if (mode === 'decrypt' && selectedFile && ((role === 'admin' && adminView === 'encryptDecrypt') || role === 'user')) {
              setDecryptionKeyInput(""); 
              const storedKey = encryptedFiles && selectedFile.name.startsWith("encrypted-") 
                 ? Object.entries(encryptedFiles).find(([originalName, key]) => selectedFile.name.includes(originalName))?.[1]
@@ -224,7 +232,7 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
     let currentSelectedFile = selectedFile; 
     let currentDecryptedData = decryptedData; 
 
-    if (currentSelectedFile && mode === 'encrypt') {
+    if (currentSelectedFile && mode === 'encrypt' && role === 'admin') { // Only admin can encrypt
       objectUrl = URL.createObjectURL(currentSelectedFile);
       setPreviewUrl(objectUrl);
       if (decryptedPreviewUrlRef.current) {
@@ -244,11 +252,11 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
             decryptedPreviewUrlRef.current = null;
             setDecryptedPreviewUrl(null); 
         }
-        if (previewUrl) {
+        if (previewUrl) { // Clear encryption preview if switching to decrypt or clearing
             URL.revokeObjectURL(previewUrl);
             setPreviewUrl(null);
         }
-    } else {
+    } else { // Clear all previews if no relevant data or mode
        if (previewUrl) URL.revokeObjectURL(previewUrl);
        setPreviewUrl(null);
        if (decryptedPreviewUrlRef.current) URL.revokeObjectURL(decryptedPreviewUrlRef.current);
@@ -256,27 +264,26 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
        setDecryptedPreviewUrl(null);
     }
 
-    return () => {
+    return () => { // Cleanup object URLs
         if (objectUrl && currentSelectedFile) URL.revokeObjectURL(objectUrl);
     };
-  }, [selectedFile, decryptedData, mode]);
+  }, [selectedFile, decryptedData, mode, role]); // Add role to dependency array
 
   const resetEncryptState = () => {
     setProcessedFile(null);
     setEncryptedData(null);
-    // setDecryptedData(null); // Keep decrypted data if user just re-encrypts
     setEncryptionKey(null);
     setError(null);
     setStatus("idle");
     setProgress(0);
     setAnalysisResults(null);
     setProcessTime(null);
-    // setDecryptedFileInfo(null); // Keep if user just re-encrypts
     setIsKeyCopied(false);
     setEmailSent(false);
+    setRecipientEmail(""); // Reset recipient email on encrypt reset
   };
 
-  const clearPreview = () => { // Full reset function
+  const clearPreview = () => { 
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     if (decryptedPreviewUrlRef.current) URL.revokeObjectURL(decryptedPreviewUrlRef.current);
     decryptedPreviewUrlRef.current = null;
@@ -286,7 +293,6 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
     setSelectedFile(null);
     setDecryptionKeyInput(""); 
     
-    // Reset all relevant states for a full clear
     setProcessedFile(null);
     setEncryptedData(null);
     setDecryptedData(null);
@@ -299,16 +305,16 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
     setDecryptedFileInfo(null);
     setIsKeyCopied(false);
     setEmailSent(false);
-    // setRotationLayers(3); // Reset to default if needed, or keep user's last setting
+    setRecipientEmail("");
 
      const fileInput = document.getElementById('medical-image-upload') as HTMLInputElement;
      if (fileInput) fileInput.value = "";
   };
 
   const handleFileChange = (file: File | null) => {
-     clearPreview(); // Ensures a fresh start when a new file is selected
+     clearPreview(); 
      setSelectedFile(file);
-     if (mode === 'decrypt' && file && ((role === 'admin' && adminView === 'encryptDecrypt') || role !== 'admin') ) {
+     if (mode === 'decrypt' && file && ((role === 'admin' && adminView === 'encryptDecrypt') || role === 'user') ) {
          toast({
             title: "File Ready for Decryption",
             description: `Selected '${file.name}'. Please enter/verify the key and click 'Decrypt'.`,
@@ -316,10 +322,9 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
      }
   };
 
-  const sendEncryptionKeyEmail = async (toEmail: string, fileName: string, key: string): Promise<boolean> => {
+  const sendEncryptionKeyEmail = async (toEmail: string, fileName: string, key: string, senderEmail: string): Promise<boolean> => {
      if (!isEmailJsConfigured) {
          console.warn("EmailJS is not configured. Cannot send email.");
-         // Toast handled in main encrypt function
          return false;
      }
     
@@ -330,10 +335,10 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
     }
 
     const templateParams = {
-        to_email: toEmail,
+        to_email: toEmail, // Recipient's email
         file_name: fileName,
         decryption_key: key,
-        user_email: email // Adding current user's email for context if template needs it
+        user_email: senderEmail // Admin's email (currentUser.email)
     };
 
     console.log("Attempting to send email with params:", templateParams);
@@ -348,24 +353,31 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
             EMAILJS_PUBLIC_KEY
         );
         console.log('EmailJS SUCCESS!', response.status, response.text);
-        // Toast handled in main encrypt function
         return true; 
     } catch (err) {
         console.error('EmailJS FAILED...', err);
         const errorMessage = err instanceof Error ? err.message : (typeof err === 'object' && err && 'text' in err) ? (err as any).text : "Unknown email sending error";
         setError(`Failed to send email: ${errorMessage}`); 
-        // Toast handled in main encrypt function
         return false; 
     } 
   };
 
   const handleEncrypt = async () => {
+    if (role !== 'admin') {
+        toast({ title: "Permission Denied", description: "Only administrators can encrypt files.", variant: "destructive" });
+        return;
+    }
     if (!selectedFile) {
       toast({ title: "No file selected", description: "Please upload an image first.", variant: "destructive" });
       return;
     }
+    if (!recipientEmail || !/\S+@\S+\.\S+/.test(recipientEmail)) {
+        toast({ title: "Invalid Recipient Email", description: "Please enter a valid email address for the recipient.", variant: "destructive" });
+        return;
+    }
+
     const originalFilename = selectedFile.name; 
-    resetEncryptState(); 
+    resetEncryptState(); // Resets recipientEmail too, so set it again before calling this or handle it inside
 
     try {
       setStatus("preprocessing");
@@ -391,19 +403,20 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
        setProgress(90);
 
        if (originalFilename && generatedKey) {
-            onUpdateEncryptedFiles(originalFilename, generatedKey); 
+            onUpdateEncryptedFiles(originalFilename, generatedKey); // Admin's history
        } else {
-            console.warn("Could not save encryption key: Original filename or key is missing.");
+            console.warn("Could not save encryption key to admin's history: Original filename or key is missing.");
        }
 
         let emailSuccess = false;
-        if (isEmailJsConfigured && originalFilename && generatedKey && email) { // Use currentUser's email
-            emailSuccess = await sendEncryptionKeyEmail(email, originalFilename, generatedKey);
+        // Use recipientEmail for 'to_email' and currentUser.email (admin's email) for 'sender_email' context
+        if (isEmailJsConfigured && originalFilename && generatedKey && recipientEmail && currentUser.email) { 
+            emailSuccess = await sendEncryptionKeyEmail(recipientEmail, originalFilename, generatedKey, currentUser.email);
             setEmailSent(emailSuccess); 
         }
 
         if (status === "sending_email" && !emailSuccess && isEmailJsConfigured) {
-             setStatus("error"); // Keep error state specific to email failure if that was the last step
+             setStatus("error"); 
         } else {
             setStatus("complete");
             setProgress(100);
@@ -414,9 +427,9 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
             description: (
             <div>
                 <span>Image encrypted in {encryptionTime.toFixed(2)} ms.</span>
-                <span className="block text-xs mt-1">Key for '{originalFilename}' saved to your profile. You can copy it below.</span>
-                {isEmailJsConfigured && emailSuccess && <span className="block text-xs mt-1 text-green-600">Decryption key sent to your email ({email}).</span>}
-                {isEmailJsConfigured && !emailSuccess && <span className="block text-xs mt-1 text-destructive">Failed to send decryption key via email. Check console for details.</span>}
+                <span className="block text-xs mt-1">Key for '{originalFilename}' saved to your (admin) profile. You can copy it below.</span>
+                {isEmailJsConfigured && emailSuccess && <span className="block text-xs mt-1 text-green-600">Decryption key sent to {recipientEmail}.</span>}
+                {isEmailJsConfigured && !emailSuccess && <span className="block text-xs mt-1 text-destructive">Failed to send decryption key to {recipientEmail}. Check console.</span>}
                 {!isEmailJsConfigured && <span className="block text-xs mt-1 text-yellow-600">Email notifications are disabled (EmailJS not configured).</span>}
             </div>
             ),
@@ -442,7 +455,6 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
           toast({ title: "No decryption key", description: "Please enter the decryption key.", variant: "destructive" });
           return;
       }
-      // Reset specific decryption states
       setError(null);
       setAnalysisResults(null); 
       setProcessTime(null);
@@ -510,7 +522,7 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
     let filename = defaultFilename || "download"; 
     if (mode === 'decrypt' && decryptedFileInfo?.name) {
         filename = `decrypted-${decryptedFileInfo.name}`; 
-    } else if (mode === 'encrypt' && selectedFile) {
+    } else if (mode === 'encrypt' && selectedFile && role === 'admin') {
         filename = constructEncryptedFilename(selectedFile.name); 
     }
     const url = URL.createObjectURL(blob);
@@ -530,6 +542,10 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
   };
 
   const handleModeChange = (newMode: Mode) => {
+    if (currentUser.role === 'user' && newMode === 'encrypt') {
+        toast({ title: "Action Not Allowed", description: "Users can only decrypt files.", variant: "destructive" });
+        return; // Prevent user from switching to encrypt mode
+    }
     if (newMode === mode) return; 
     setMode(newMode);
     clearPreview();
@@ -553,8 +569,10 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
   const createMailtoLink = (): string => {
     if (!encryptedData || !encryptionKey || !selectedFile) return "#"; 
     const subject = `MediCrypt Encrypted File: ${selectedFile.name}`;
+    // Recipient email should be pre-filled if admin is sending, otherwise, user sends to themselves or whomever
+    const mailtoRecipient = (role === 'admin' && recipientEmail) ? recipientEmail : ""; 
     const body = `Please find the encrypted file attached (or you will need to send it separately).\n\nThe decryption key is: ${encryptionKey}\nRotation Layers used: ${rotationLayers}\n\nKeep this key and layer count secure.`;
-    return `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`; // Removed direct 'to' email
+    return `mailto:${mailtoRecipient}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
   const isLoading = ["preprocessing", "generating_key", "encrypting", "decrypting", "analyzing", "sending_email"].includes(status); 
@@ -564,7 +582,7 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
     : "MediCrypt";
   const cardDescriptionText = role === 'admin' && adminView === 'dashboard'
     ? `Overview of system users. Logged in as: ${email}`
-    : `Securely encrypt and decrypt medical images. Logged in as: ${email}`;
+    : `${role === 'admin' ? 'Securely encrypt and decrypt medical images.' : 'Securely decrypt medical images.'} Logged in as: ${email}`;
 
   return (
     <div className="w-full max-w-4xl mx-auto">
@@ -604,7 +622,7 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
             {cardDescriptionText} <Badge variant={role === 'admin' ? 'destructive' : 'secondary'} className="capitalize">{role}</Badge>
           </CardDescription>
 
-          {role === 'admin' && (
+          {role === 'admin' && ( // Admin can switch between dashboard and tool
             <div className="flex justify-center space-x-2 pt-4">
                 <Button
                     variant={adminView === 'dashboard' ? 'default' : 'outline'}
@@ -624,21 +642,24 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
                 </Button>
             </div>
           )}
-          {(role !== 'admin' || adminView === 'encryptDecrypt') && (
+           {/* Mode selection for Encrypt/Decrypt Tool view for Admin, or always for User (but limited) */}
+          {((role === 'admin' && adminView === 'encryptDecrypt') || role === 'user') && (
              <div className="flex justify-center space-x-2 pt-4">
-                    <Button
-                        variant={mode === 'encrypt' ? 'default' : 'outline'}
-                        onClick={() => handleModeChange('encrypt')}
-                        className={`min-w-[120px] ${mode === 'encrypt' ? 'bg-accent hover:bg-accent/90' : ''}`}
-                        disabled={isLoading}
-                    >
-                        <Lock className="mr-2 h-4 w-4" /> Encrypt
-                    </Button>
-                    <Button
+                    {role === 'admin' && ( // Only admin sees Encrypt button
+                        <Button
+                            variant={mode === 'encrypt' ? 'default' : 'outline'}
+                            onClick={() => handleModeChange('encrypt')}
+                            className={`min-w-[120px] ${mode === 'encrypt' ? 'bg-accent hover:bg-accent/90' : ''}`}
+                            disabled={isLoading}
+                        >
+                            <Lock className="mr-2 h-4 w-4" /> Encrypt
+                        </Button>
+                    )}
+                    <Button // Decrypt button always available for tool view
                         variant={mode === 'decrypt' ? 'default' : 'outline'}
                         onClick={() => handleModeChange('decrypt')}
                         className={`min-w-[120px] ${mode === 'decrypt' ? 'bg-accent hover:bg-accent/90' : ''}`}
-                        disabled={isLoading}
+                        disabled={isLoading || (role === 'user' && mode === 'encrypt')} // User can't be in encrypt mode
                     >
                         <Unlock className="mr-2 h-4 w-4" /> Decrypt
                     </Button>
@@ -649,9 +670,9 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
         <CardContent className="space-y-6">
           {role === 'admin' && adminView === 'dashboard' && allUsers ? (
             <AdminDashboard users={allUsers} />
-          ) : ( (role !== 'admin' || adminView === 'encryptDecrypt') &&
+          ) : ( ((role === 'admin' && adminView === 'encryptDecrypt') || role === 'user') &&
             <>
-              {!isEmailJsConfigured && mode === 'encrypt' && (
+              {role === 'admin' && mode === 'encrypt' && !isEmailJsConfigured && (
                     <Alert variant="default" className="border-yellow-500 bg-yellow-50 text-yellow-800">
                         <AlertCircle className="h-4 w-4 text-yellow-600" />
                         <AlertTitle>Email Notification Disabled</AlertTitle>
@@ -662,12 +683,12 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
                     </Alert>
                 )}
 
-              {(role === 'admin' || mode === 'encrypt') && ( // Show for admin in encrypt mode OR always for user in encrypt mode
+              {role === 'admin' && mode === 'encrypt' && ( 
                 <Card className="bg-secondary/30 border-border">
                     <CardHeader className="pb-2">
                         <CardTitle className="text-md flex items-center gap-2">
                             <Settings className="w-5 h-5 text-accent"/>
-                            {role === 'admin' ? "Admin: Scrambling Parameters" : "Scrambling Parameters"}
+                            Scrambling Parameters
                         </CardTitle>
                         <CardDescription className="text-xs">Configure pixel scrambling complexity.</CardDescription>
                     </CardHeader>
@@ -680,7 +701,7 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
                                 value={[rotationLayers]}
                                 onValueChange={(value) => setRotationLayers(value[0])}
                                 className="mt-2"
-                                disabled={isLoading || mode === 'decrypt'} // Disable if in decrypt mode
+                                disabled={isLoading} 
                             />
                             <p className="text-xs text-muted-foreground mt-1">Higher values increase scrambling complexity (simulated).</p>
                         </div>
@@ -688,13 +709,34 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
                 </Card>
               )}
 
+              {role === 'admin' && mode === 'encrypt' && (
+                <div className="space-y-2">
+                    <Label htmlFor="recipient-email" className="text-sm font-medium">Recipient Email for Key</Label>
+                    <div className="flex items-center space-x-2">
+                        <MailPlus className="h-5 w-5 text-muted-foreground flex-shrink-0"/>
+                        <Input
+                            id="recipient-email"
+                            type="email"
+                            placeholder="user@example.com"
+                            value={recipientEmail}
+                            onChange={(e) => setRecipientEmail(e.target.value)}
+                            className="flex-grow"
+                            disabled={isLoading}
+                            aria-label="Recipient Email"
+                        />
+                    </div>
+                    <p className="text-xs text-muted-foreground">Enter the email address to send the decryption key to.</p>
+                </div>
+              )}
+
+
               <ImageUpload
                 onFileChange={handleFileChange}
-                previewUrl={mode === 'encrypt' ? previewUrl : null}
+                previewUrl={(mode === 'encrypt' && role === 'admin') ? previewUrl : null} // Preview for admin encrypting
                 clearPreview={clearPreview} 
                 id="medical-image-upload"
-                accept={mode === 'encrypt' ? "image/png, image/jpeg, image/dicom, image/x-ray, image/ct, image/mri" : ".mcf,application/octet-stream"}
-                disabled={isLoading}
+                accept={(mode === 'encrypt' && role === 'admin') ? "image/png, image/jpeg, image/dicom, image/x-ray, image/ct, image/mri" : ".mcf,application/octet-stream"}
+                disabled={isLoading || (mode === 'encrypt' && role === 'user')} // Users can't use encrypt features
               />
               
               {mode === 'decrypt' && selectedFile && !decryptedPreviewUrl && !decryptedData && (
@@ -703,7 +745,6 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
                         <AlertTitle>File to Decrypt: {selectedFile.name}</AlertTitle>
                         <AlertDescription>
                             Enter or verify the decryption key below and click "Decrypt". 
-                            Ensure Rotation Layers (if shown) match those used during encryption.
                         </AlertDescription>
                     </Alert>
                 )}
@@ -741,11 +782,10 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
                                 aria-label="Decryption Key"
                             />
                         </div>
-                        {/* Decryption rotation layers are now read from file metadata, so no user input needed here */}
                     </div>
                 )}
 
-              {mode === 'encrypt' && analysisResults && (status === 'complete' || (status === 'error' && !errorMessageIncludesEmail(error))) && ( 
+              {mode === 'encrypt' && role === 'admin' && analysisResults && (status === 'complete' || (status === 'error' && !errorMessageIncludesEmail(error))) && ( 
                     <Card className="bg-secondary/50 border-border">
                         <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
                             <CardTitle className="text-lg flex items-center gap-2">
@@ -773,10 +813,10 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
                                     </TooltipProvider>
                                 </div>
                             )}
-                            {isEmailJsConfigured && encryptionKey && (
+                            {isEmailJsConfigured && encryptionKey && recipientEmail && (
                                 <div className="flex items-center gap-2 mt-1 pt-1 text-xs border-t border-border/50">
                                     <Mail className={`h-4 w-4 ${emailSent ? 'text-green-600' : (status === 'error' && errorMessageIncludesEmail(error)) ? 'text-destructive' : 'text-muted-foreground'}`}/>
-                                    <span>Email Status: {emailSent ? <span className="text-green-600">Key sent to {email}</span> : (status === 'error' && errorMessageIncludesEmail(error)) ? <span className="text-destructive">Failed</span> : <span className="text-muted-foreground">Not sent/Pending</span>}</span>
+                                    <span>Email Status: {emailSent ? <span className="text-green-600">Key sent to {recipientEmail}</span> : (status === 'error' && errorMessageIncludesEmail(error)) ? <span className="text-destructive">Failed</span> : <span className="text-muted-foreground">Not sent/Pending</span>}</span>
                                 </div>
                             )}
                             {!isEmailJsConfigured && encryptionKey && (
@@ -813,10 +853,10 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
             </>
           )}
         </CardContent>
-        { (role !== 'admin' || adminView === 'encryptDecrypt') && (
+        { ((role === 'admin' && adminView === 'encryptDecrypt') || role === 'user') && (
             <CardFooter className="flex flex-col sm:flex-row justify-between gap-3 pt-4">
             <div className="flex gap-2 w-full sm:w-auto flex-wrap justify-center sm:justify-start">
-                {mode === 'encrypt' && (
+                {role === 'admin' && mode === 'encrypt' && (
                     <Button onClick={handleEncrypt} disabled={isLoading || !selectedFile || (status === 'complete' && mode === 'encrypt')} className="w-full sm:w-auto flex-1 sm:flex-none min-w-[120px] bg-accent hover:bg-accent/90">
                         {isLoading && !["sending_email", "complete", "error"].includes(status) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Lock className="mr-2 h-4 w-4" />}
                         {status === 'preprocessing' ? 'Preprocessing...' :
@@ -827,7 +867,7 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
                         'Encrypt'}
                     </Button>
                 )}
-                {mode === 'decrypt' && (
+                {mode === 'decrypt' && ( // Decrypt always available for tool view
                     <Button onClick={handleDecrypt} disabled={isLoading || !selectedFile || !decryptionKeyInput } className="w-full sm:w-auto flex-1 sm:flex-none min-w-[120px] bg-accent hover:bg-accent/90">
                         {isLoading && status === 'decrypting' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Unlock className="mr-2 h-4 w-4" />}
                         {status === 'decrypting' ? 'Decrypting...' : 'Decrypt'}
@@ -839,12 +879,12 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
             </div>
 
             <div className="flex gap-2 w-full sm:w-auto flex-wrap justify-center sm:justify-start">
-                {mode === 'encrypt' && encryptedData && (status === 'complete' || (status === 'error' && !errorMessageIncludesEmail(error))) && ( 
+                {role === 'admin' && mode === 'encrypt' && encryptedData && (status === 'complete' || (status === 'error' && !errorMessageIncludesEmail(error))) && ( 
                     <>
                     <Button variant="outline" onClick={() => handleDownload(encryptedData, selectedFile ? constructEncryptedFilename(selectedFile.name) : undefined)} className="w-full sm:w-auto flex-1 sm:flex-none min-w-[150px]">
                         <Download className="mr-2 h-4 w-4" /> Download Encrypted
                     </Button>
-                    {(!isEmailJsConfigured || (status === 'error' && errorMessageIncludesEmail(error))) && encryptionKey && selectedFile && (
+                    {(!isEmailJsConfigured || (status === 'error' && errorMessageIncludesEmail(error))) && encryptionKey && selectedFile && recipientEmail && (
                         <TooltipProvider>
                             <Tooltip>
                                 <TooltipTrigger asChild>
@@ -874,3 +914,4 @@ export function MediCryptApp({ onLogout, currentUser, onUpdateEncryptedFiles, al
 function errorMessageIncludesEmail(error: string | null): boolean {
     return !!error && (error.toLowerCase().includes('email') || error.toLowerCase().includes('emailjs'));
 }
+
