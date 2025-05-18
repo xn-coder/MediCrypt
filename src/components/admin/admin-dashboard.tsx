@@ -26,7 +26,10 @@ export function AdminDashboard({ users }: AdminDashboardProps) {
   const displayUsers = users.filter(user => user.role !== 'admin');
 
   return (
-    <Card className="relative my-6 border shadow-lg bg-[url('https://placehold.co/1200x800.png')] bg-cover bg-center overflow-hidden">
+    <Card 
+      className="relative my-6 border shadow-lg bg-[url('https://placehold.co/1200x800.png')] bg-cover bg-center overflow-hidden"
+      data-ai-hint="doctor healthcare"
+    >
       {/* Overlay for content readability, uses theme background color with opacity and blur */}
       <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-0"></div>
       
@@ -72,4 +75,3 @@ export function AdminDashboard({ users }: AdminDashboardProps) {
     </Card>
   );
 }
-
