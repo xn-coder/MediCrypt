@@ -1,3 +1,4 @@
+
 // src/components/admin/admin-dashboard.tsx
 'use client';
 
@@ -25,9 +26,9 @@ export function AdminDashboard({ users }: AdminDashboardProps) {
   const displayUsers = users.filter(user => user.role !== 'admin');
 
   return (
-    <Card className="my-6 border-accent shadow-md">
+    <Card className="my-6 border shadow-lg"> {/* Changed border-accent to border and shadow-md to shadow-lg */}
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-xl">
+        <CardTitle className="flex items-center gap-2 text-xl text-accent"> {/* Ensured text-accent is applied */}
           <Users className="h-6 w-6 text-accent" />
           Admin Dashboard - Registered Users
         </CardTitle>
