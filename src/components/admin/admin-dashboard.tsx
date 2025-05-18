@@ -27,8 +27,8 @@ export function AdminDashboard({ users }: AdminDashboardProps) {
 
   return (
     <Card 
-      className="relative my-6 border shadow-lg bg-[url('https://placehold.co/1200x800.png')] bg-cover bg-center overflow-hidden"
-      data-ai-hint="doctor healthcare"
+      className="relative my-6 border shadow-lg bg-[url('https://ik.imagekit.io/8epbuvbi9/background.jpg')] bg-cover bg-center overflow-hidden"
+      data-ai-hint="medical healthcare" // Updated hint to be more general for the provided image
     >
       {/* Overlay for content readability, uses theme background color with opacity and blur */}
       <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-0"></div>
@@ -75,3 +75,4 @@ export function AdminDashboard({ users }: AdminDashboardProps) {
     </Card>
   );
 }
+
