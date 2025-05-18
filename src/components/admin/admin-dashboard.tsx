@@ -26,43 +26,50 @@ export function AdminDashboard({ users }: AdminDashboardProps) {
   const displayUsers = users.filter(user => user.role !== 'admin');
 
   return (
-    <Card className="my-6 border shadow-lg"> {/* Changed border-accent to border and shadow-md to shadow-lg */}
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-xl text-accent"> {/* Ensured text-accent is applied */}
-          <Users className="h-6 w-6 text-accent" />
-          Admin Dashboard - Registered Users
-        </CardTitle>
-        <CardDescription>List of all non-admin users registered in the system.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {displayUsers && displayUsers.length > 0 ? (
-          <Table>
-            <TableCaption>A list of registered non-admin users. ({displayUsers.length} total)</TableCaption>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[100px]">#</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead className="text-right">Encrypted Files</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {displayUsers.map((user, index) => (
-                <TableRow key={user.email}>
-                  <TableCell className="font-medium">{index + 1}</TableCell>
-                  <TableCell>{user.email}</TableCell>
-                  <TableCell>{user.role}</TableCell>
-                  <TableCell className="text-right">
-                    {Object.keys(user.encryptedFiles || {}).length}
-                  </TableCell>
+    <Card className="relative my-6 border shadow-lg bg-[url('https://placehold.co/1200x800.png')] bg-cover bg-center overflow-hidden">
+      {/* Overlay for content readability, uses theme background color with opacity and blur */}
+      <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-0"></div>
+      
+      {/* Content needs to be above the overlay */}
+      <div className="relative z-10">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-xl text-accent"> {/* Ensured text-accent is applied */}
+            <Users className="h-6 w-6 text-accent" />
+            Admin Dashboard - Registered Users
+          </CardTitle>
+          <CardDescription>List of all non-admin users registered in the system.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {displayUsers && displayUsers.length > 0 ? (
+            <Table>
+              <TableCaption>A list of registered non-admin users. ({displayUsers.length} total)</TableCaption>
+              <TableHeader>
+                <TableRow className="border-b-border/50 hover:bg-foreground/5">
+                  <TableHead className="w-[100px]">#</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead className="text-right">Encrypted Files</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        ) : (
-          <p className="text-center text-muted-foreground">No non-admin users registered yet.</p>
-        )}
-      </CardContent>
+              </TableHeader>
+              <TableBody>
+                {displayUsers.map((user, index) => (
+                  <TableRow key={user.email} className="border-b-border/50 hover:bg-foreground/5">
+                    <TableCell className="font-medium">{index + 1}</TableCell>
+                    <TableCell>{user.email}</TableCell>
+                    <TableCell>{user.role}</TableCell>
+                    <TableCell className="text-right">
+                      {Object.keys(user.encryptedFiles || {}).length}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <p className="text-center text-muted-foreground">No non-admin users registered yet.</p>
+          )}
+        </CardContent>
+      </div>
     </Card>
   );
 }
+
