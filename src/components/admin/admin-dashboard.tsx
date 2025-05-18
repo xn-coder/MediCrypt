@@ -27,14 +27,11 @@ export function AdminDashboard({ users }: AdminDashboardProps) {
 
   return (
     <Card 
-      className="relative my-6 border shadow-lg bg-[url('https://ik.imagekit.io/8epbuvbi9/background.jpg')] bg-cover bg-center overflow-hidden"
-      data-ai-hint="medical healthcare" // Updated hint to be more general for the provided image
+      className="my-6 border shadow-lg overflow-hidden"
+      // Removed data-ai-hint related to background image
     >
-      {/* Overlay for content readability, uses theme background color with opacity and blur */}
-      <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-0"></div>
-      
-      {/* Content needs to be above the overlay */}
-      <div className="relative z-10">
+      {/* Removed overlay div and related z-index adjustments for content */}
+      <div>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-xl text-accent"> {/* Ensured text-accent is applied */}
             <Users className="h-6 w-6 text-accent" />
@@ -75,4 +72,3 @@ export function AdminDashboard({ users }: AdminDashboardProps) {
     </Card>
   );
 }
-
