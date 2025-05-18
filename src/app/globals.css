@@ -16,9 +16,9 @@ body {
     /* Light Theme */
     --background: 0 0% 100% / 0.95; /* Mostly opaque white (for inputs, etc.) */
     --foreground: 0 0% 3.9%; 
-    --card: 0 0% 100% / 0.92; /* Slightly transparent white for cards */
+    --card: 0 0% 100% / 0.85; /* More transparent white for cards */
     --card-foreground: 0 0% 3.9%;
-    --popover: 0 0% 100% / 0.92; /* Slightly transparent white for popovers */
+    --popover: 0 0% 100% / 0.85; /* More transparent white for popovers */
     --popover-foreground: 0 0% 3.9%;
     --primary: 210 85% 55%; /* Blue */
     --primary-foreground: 0 0% 100%; 
@@ -53,9 +53,9 @@ body {
     /* Dark Theme */
     --background: 240 10% 3.9% / 0.95; /* Mostly opaque dark (for inputs, etc.) */
     --foreground: 0 0% 98%;
-    --card: 240 10% 3.9% / 0.92; /* Slightly transparent dark for cards */
+    --card: 240 10% 3.9% / 0.85; /* More transparent dark for cards */
     --card-foreground: 0 0% 98%;
-    --popover: 240 10% 3.9% / 0.92; /* Slightly transparent dark for popovers */
+    --popover: 240 10% 3.9% / 0.85; /* More transparent dark for popovers */
     --popover-foreground: 0 0% 98%;
     --primary: 210 85% 65%; 
     --primary-foreground: 0 0% 100%;
